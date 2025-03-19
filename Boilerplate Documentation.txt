@@ -1,0 +1,137 @@
+**# Boilerplate Documentation**
+
+## **1. Overview**
+This document outlines the structure of the **FastAPI + Angular Boilerplate** used to build the **Insurance Claims Processing Platform**. The system is modular, with components separated by functionality.
+
+## **2. Technology Stack**
+- **Backend**: FastAPI (Python), PostgreSQL, Celery, Redis
+- **Frontend**: Angular, TypeScript
+- **Authentication**: JWT-based authentication
+- **Storage**: Cloud storage (S3) for media files
+- **Task Processing**: Celery + Redis for notifications & report generation
+
+---
+## **3. Project Structure**
+
+### **A. Backend (FastAPI)**
+```
+backend/
+│── app/
+│   │── api/
+│   │   │── v1/
+│   │   │   │── auth.py   # Authentication endpoints
+│   │   │   │── claims.py # Claims processing endpoints
+│   │   │   │── reports.py # Report generation endpoints
+│   │   │   │── users.py  # User management endpoints
+│   │── core/
+│   │   │── config.py  # App configurations
+│   │   │── security.py  # Security (JWT handling)
+│   │── models/
+│   │   │── user.py  # User model
+│   │   │── claim.py  # Claims model
+│   │   │── report.py  # Reports model
+│   │   │── policy.py  # Policies model
+│   │── services/
+│   │   │── auth_service.py  # Authentication logic
+│   │   │── claim_service.py # Claims processing logic
+│   │   │── report_service.py # Report generation logic
+│   │── workers/
+│   │   │── tasks.py  # Background tasks (e.g., notifications)
+│   │── database.py  # DB connection & models
+│── main.py  # FastAPI app entry point
+```
+
+### **B. Frontend (Angular)**
+```
+frontend/
+│── src/
+│   │── app/
+│   │   │── components/
+│   │   │── pages/
+│   │   │   │── login/  # Login page
+│   │   │   │── dashboard/  # Dashboard page
+│   │   │   │── claims/  # Claims management page
+│   │   │   │── reports/  # Reports page
+│   │   │── services/
+│   │   │   │── auth.service.ts  # Handles authentication
+│   │   │   │── claim.service.ts  # Handles claims API calls
+│   │   │   │── report.service.ts  # Handles report API calls
+│   │   │── guards/
+│   │   │   │── auth.guard.ts  # Route protection logic
+│   │   │── app.module.ts  # Angular module setup
+│   │── assets/  # Static assets
+│── index.html  # Main HTML file
+```
+
+---
+## **4. Key Features**
+
+### **A. Authentication & Authorization**
+- Uses **JWT tokens** for authentication.
+- First registered user becomes the **superuser (Owner)**.
+- Superuser creates **roles** and assigns permissions.
+- Role-based access control (RBAC) ensures **only authorized users** can perform actions.
+
+### **B. Claims Management**
+- **Clients** can submit claims.
+- **Claims officers** review claims, approve/reject them, and add reasoning.
+- Changes trigger **notifications** to the client.
+
+### **C. Report Generation**
+- Reports summarize claim decisions and are stored in **PostgreSQL**.
+- Reports can be **exported as PDFs**.
+
+### **D. Media Uploads**
+- Clients can upload **images, videos, and documents** as proof.
+- Media is stored in **cloud storage (S3)**.
+
+### **E. Background Tasks & Notifications**
+- **Celery workers** handle notifications asynchronously.
+- **Redis** is used as a message broker.
+- Clients are notified of any claim updates.
+
+---
+## **5. API Endpoints**
+### **A. Authentication API**
+- `POST /auth/register` – Register a new user
+- `POST /auth/login` – Authenticate user & return JWT
+- `GET /auth/me` – Get current user details
+
+### **B. Claims API**
+- `POST /claims/` – Submit a new claim
+- `GET /claims/{id}/` – Get claim details
+- `PUT /claims/{id}/` – Update claim (only officers)
+- `DELETE /claims/{id}/` – Delete claim (only officers)
+
+### **C. Reports API**
+- `GET /reports/{id}/` – Get claim report
+- `POST /reports/{claim_id}/generate` – Generate report
+
+---
+## **6. Deployment & Setup**
+
+### **A. Backend Setup**
+```bash
+cd backend
+python -m venv env
+source env/bin/activate  # On Windows, use `env\Scripts\activate`
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+### **B. Frontend Setup**
+```bash
+cd frontend
+npm install
+ng serve
+```
+
+### **C. Running Celery Workers**
+```bash
+celery -A app.workers.tasks worker --loglevel=info
+```
+
+---
+## **7. Conclusion**
+This boilerplate provides a structured, modular foundation for building an **insurance claims management platform**. The system is scalable, secure, and optimized for efficient claims processing and report generation.
+

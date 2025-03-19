@@ -1,0 +1,109 @@
+**# Database Schema Document**
+
+## **1. Overview**
+This document details the database structure for the **Insurance Claims Processing Platform**, including tables, relationships, and data handling procedures.
+
+## **2. Tables and Schema**
+
+### **A. Users & Authentication**
+
+#### **1. `users` Table**
+| Column Name     | Data Type  | Constraints                     | Description                |
+|----------------|-----------|--------------------------------|----------------------------|
+| `id`           | UUID      | Primary Key                    | Unique user ID             |
+| `username`     | VARCHAR   | Unique, Not Null               | User login name            |
+| `email`        | VARCHAR   | Unique, Not Null               | User email address         |
+| `password`     | VARCHAR   | Not Null                        | Hashed password            |
+| `role_id`      | UUID      | Foreign Key (`roles.id`)       | User’s assigned role       |
+| `created_at`   | TIMESTAMP | Default: now()                 | Account creation date      |
+
+#### **2. `roles` Table**
+| Column Name   | Data Type  | Constraints | Description                 |
+|--------------|-----------|-------------|-----------------------------|
+| `id`         | UUID      | Primary Key | Unique role ID              |
+| `name`       | VARCHAR   | Unique      | Role name (e.g., Officer)   |
+| `permissions`| JSONB     | Not Null    | Permissions per role        |
+
+### **B. Claims Management**
+
+#### **3. `claims` Table**
+| Column Name     | Data Type  | Constraints                         | Description                     |
+|----------------|-----------|------------------------------------|---------------------------------|
+| `id`           | UUID      | Primary Key                        | Unique claim ID                 |
+| `client_id`    | UUID      | Foreign Key (`users.id`)           | Client who submitted claim      |
+| `officer_id`   | UUID      | Foreign Key (`users.id`)           | Officer assigned to review      |
+| `policy_id`    | UUID      | Foreign Key (`policies.id`)        | Linked policy                   |
+| `status`       | VARCHAR   | Default: ‘Pending’                 | Claim status (Pending, Approved, Rejected) |
+| `description`  | TEXT      | Not Null                            | Claim details                    |
+| `created_at`   | TIMESTAMP | Default: now()                      | Submission timestamp             |
+| `updated_at`   | TIMESTAMP | Default: now()                      | Last updated timestamp           |
+
+#### **4. `claim_media` Table**
+| Column Name     | Data Type  | Constraints                         | Description                     |
+|----------------|-----------|------------------------------------|---------------------------------|
+| `id`           | UUID      | Primary Key                        | Unique media file ID            |
+| `claim_id`     | UUID      | Foreign Key (`claims.id`)          | Linked claim                    |
+| `file_url`     | VARCHAR   | Not Null                            | URL to stored file              |
+| `file_type`    | VARCHAR   | Not Null                            | Image, video, or document       |
+| `uploaded_at`  | TIMESTAMP | Default: now()                      | Upload timestamp                |
+
+### **C. Policies & Insured Assets**
+
+#### **5. `policies` Table**
+| Column Name     | Data Type  | Constraints                         | Description                     |
+|----------------|-----------|------------------------------------|---------------------------------|
+| `id`           | UUID      | Primary Key                        | Unique policy ID                |
+| `policy_number`| VARCHAR   | Unique, Not Null                   | Policy number                   |
+| `owner_id`     | UUID      | Foreign Key (`users.id`)           | Policyholder                    |
+| `officer_id`   | UUID      | Foreign Key (`users.id`)           | Assigned officer                |
+| `premium`      | DECIMAL   | Not Null                            | Monthly premium amount          |
+| `coverage`     | DECIMAL   | Not Null                            | Coverage amount                 |
+| `created_at`   | TIMESTAMP | Default: now()                      | Policy creation date            |
+
+#### **6. `insured_assets` Table**
+| Column Name    | Data Type  | Constraints                       | Description                     |
+|---------------|-----------|----------------------------------|---------------------------------|
+| `id`          | UUID      | Primary Key                      | Unique asset ID                 |
+| `policy_id`   | UUID      | Foreign Key (`policies.id`)      | Associated policy               |
+| `name`        | VARCHAR   | Not Null                          | Asset name                      |
+| `value`       | DECIMAL   | Not Null                          | Insured value                   |
+| `description` | TEXT      | Not Null                          | Asset details                   |
+
+### **D. Reports & Logs**
+
+#### **7. `reports` Table**
+| Column Name    | Data Type  | Constraints                         | Description                     |
+|---------------|-----------|------------------------------------|---------------------------------|
+| `id`          | UUID      | Primary Key                        | Unique report ID                |
+| `claim_id`    | UUID      | Foreign Key (`claims.id`)          | Linked claim                    |
+| `officer_id`  | UUID      | Foreign Key (`users.id`)           | Officer who generated report    |
+| `content`     | TEXT      | Not Null                            | Report details                  |
+| `created_at`  | TIMESTAMP | Default: now()                      | Report generation date          |
+
+#### **8. `notifications` Table**
+| Column Name    | Data Type  | Constraints                         | Description                     |
+|---------------|-----------|------------------------------------|---------------------------------|
+| `id`          | UUID      | Primary Key                        | Unique notification ID          |
+| `user_id`     | UUID      | Foreign Key (`users.id`)           | Recipient user                  |
+| `message`     | TEXT      | Not Null                            | Notification content            |
+| `status`      | VARCHAR   | Default: ‘Unread’                  | Read/unread status              |
+| `created_at`  | TIMESTAMP | Default: now()                      | Notification timestamp          |
+
+#### **9. `logs` Table**
+| Column Name    | Data Type  | Constraints                         | Description                     |
+|---------------|-----------|------------------------------------|---------------------------------|
+| `id`          | UUID      | Primary Key                        | Unique log ID                   |
+| `user_id`     | UUID      | Foreign Key (`users.id`)           | User who performed action       |
+| `action`      | VARCHAR   | Not Null                            | Action description              |
+| `created_at`  | TIMESTAMP | Default: now()                      | Log timestamp                   |
+
+## **3. Data Relationships**
+- **Users & Roles**: One-to-Many (`users.role_id` → `roles.id`)
+- **Claims & Users**: Many-to-One (`claims.client_id` & `claims.officer_id` → `users.id`)
+- **Claims & Policies**: Many-to-One (`claims.policy_id` → `policies.id`)
+- **Claims & Media**: One-to-Many (`claim_media.claim_id` → `claims.id`)
+- **Policies & Assets**: One-to-Many (`insured_assets.policy_id` → `policies.id`)
+- **Claims & Reports**: One-to-One (`reports.claim_id` → `claims.id`)
+
+This schema ensures data integrity and scalability for the platform.
+
