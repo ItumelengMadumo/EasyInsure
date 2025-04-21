@@ -6,3 +6,4 @@ psycopg2
 python-dotenv
 redis
 celery
+python-jose[cryptography]

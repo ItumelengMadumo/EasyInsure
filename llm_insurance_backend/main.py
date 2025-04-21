@@ -4,10 +4,10 @@ from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-#from app.api.v1 import claims, tier1, tier2, tier3  # Ensure these modules exist and are correctly implemented
+from app.api.v1 import claims, tier1, tier2, tier3  # Ensure these modules exist and are correctly implemented
 
 # Database configuration
-DATABASE_URL = "postgresql://postgres:10664@localhost/Insurance_llm"
+DATABASE_URL = "postgresql://postgres:admin@localhost:5433/Insurance_llm"
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)

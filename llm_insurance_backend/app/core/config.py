@@ -1,5 +1,8 @@
 import os
 from dotenv import load_dotenv
+import secrets 
+
+print(secrets.token_urlsafe(32))  # Generate a random secret key for the session
 
 load_dotenv()
 
@@ -13,9 +16,10 @@ class Settings:
     DATABASE_CONFIG = {
         "dbname": "Insurance_llm",
         "user": "postgres",  # Change if using another username
-        "password": "10664",  # Replace with your actual password
+        "password": "admin",  # Replace with your actual password
         "host": "localhost",
         "port": "5433"
     }
 
 settings = Settings()
+print("Loaded SECRET_KEY:", os.getenv("SECRET_KEY"))
