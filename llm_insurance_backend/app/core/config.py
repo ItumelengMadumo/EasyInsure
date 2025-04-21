@@ -12,6 +12,9 @@ class Settings:
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
     COHERE_API_KEY = os.getenv("COHERE_API_KEY")
     
+    ## JWT Secret Key
+    SECRET_KEY = os.getenv("SECRET_KEY") 
+    
     # Database Configuration
     DATABASE_CONFIG = {
         "dbname": "Insurance_llm",

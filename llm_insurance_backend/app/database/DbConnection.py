@@ -2,9 +2,9 @@ import psycopg2
 
 # Establish connection to the database
 conn = psycopg2.connect(
-    dbname="llm_analysis_db",
+    dbname="Insurance_llm",
     user="postgres",  # Or your username
-    password="10664",
+    password="admin",  # Or your password
     host="localhost",
     port="5433"
 )
@@ -13,17 +13,17 @@ conn = psycopg2.connect(
 cursor = conn.cursor()
 
 # Example of inserting LLM analysis data
-input_text = "This is a sample text to analyze."
-analysis_result = "Positive sentiment detected."
+#input_text = "This is a sample text to analyze."
+#analysis_result = "Positive sentiment detected."
 
-cursor.execute(
-    "INSERT INTO analysis (input_text, analysis_result) VALUES (%s, %s)",
-    (input_text, analysis_result)
-)
+#cursor.execute(
+ #   "INSERT INTO analysis (input_text, analysis_result) VALUES (%s, %s)",
+  #  (input_text, analysis_result)
+#)
 
 # Commit the changes
 conn.commit()
 
 # Close the connection
 cursor.close()
-conn.close()
+conn.close() 

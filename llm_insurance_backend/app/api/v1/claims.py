@@ -1,15 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.services.security import authorize_user, get_current_user
-from app.models.claim import Claim
-from app.database import get_db
+#from app.models.claim import claim
+#from app.database.DbConnection import get_db
 
 router = APIRouter()
 
 @router.get("/claims")
 def get_all_claims(
     user=Depends(get_current_user), 
-    db: Session = Depends(get_db)
+   # db: Session = Depends(get_db)
 ):
     """
     Retrieve claims based on user role:
@@ -39,7 +39,7 @@ def get_all_claims(
 def get_claim(
     claim_id: int, 
     user=Depends(get_current_user), 
-    db: Session = Depends(get_db)
+   # db: Session = Depends(get_db)
 ):
     """
     Retrieve a specific claim based on user role:

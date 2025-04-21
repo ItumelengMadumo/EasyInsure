@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from app.api.v1 import claims, tier1, tier2, tier3  # Ensure these modules exist and are correctly implemented
 
 # Database configuration
-DATABASE_URL = "postgresql://postgres:admin@localhost:5433/Insurance_llm"
+DATABASE_URL = "postgres:admin@localhost:5433/Insurance_llm"
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)

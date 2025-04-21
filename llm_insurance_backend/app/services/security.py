@@ -2,6 +2,7 @@ from fastapi import Depends, HTTPException, Security
 from jose import JWTError, jwt
 from app.core.config import settings
 from app.services.auth_service import ROLE_PERMISSIONS
+import os
 
 SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = "HS256"

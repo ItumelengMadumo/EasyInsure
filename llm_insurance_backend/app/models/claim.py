@@ -5,7 +5,7 @@ from datetime import datetime
 conn = psycopg2.connect(
     dbname="Insurance_llm",
     user="postgres",
-    password="10664",
+    password="admin",
     host="localhost",
     port="5433"
 ) 

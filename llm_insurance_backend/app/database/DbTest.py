@@ -4,7 +4,7 @@ import psycopg2
 conn = psycopg2.connect(
     dbname="Insurance_llm",
     user="postgres",  # Change if using another username
-    password="10664",  # Replace with your actual password
+    password="admin",  # Replace with your actual password
     host="localhost",
     port="5433"
 )
