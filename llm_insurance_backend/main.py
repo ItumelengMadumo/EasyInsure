@@ -1,54 +1,59 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import claims, tier1, tier2, tier3  # Ensure these modules exist and are correctly implemented
+from app.database.session import Base, engine
+from app.api.v1 import auth, assets, claims, policies, tools, tier1, tier2, tier3
 
-# Database configuration
-DATABASE_URL = "postgres:admin@localhost:5433/Insurance_llm"
+# Import all models so they are registered with Base.metadata
+from app.models.models import (  # noqa: F401
+    User, Asset, AssetValuation, Policy, Claim,
+    DepreciationRate, Report, AuditTrail,
+)
 
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine)
-Base = declarative_base()
-
-# Define a Database Model
-class Claim(Base):
-    __tablename__ = "claims"
-    id = Column(Integer, primary_key=True, index=True)
-    claim_number = Column(String, unique=True, index=True)
-    description = Column(String)
-    status = Column(String, default="pending")
-
+# Create all tables
 Base.metadata.create_all(bind=engine)
 
-# Pydantic Model for Validation
-class ClaimRequest(BaseModel):
-    claim_number: str
-    description: str
-    status: str
+app = FastAPI(
+    title="EasyInsure — LLM-Powered Insurance Platform",
+    description="AI-assisted claims processing, underwriting, fraud detection & decision support.",
+    version="2.0.0",
+)
 
-# Initialize FastAPI app
-app = FastAPI()
+# CORS — allow frontend dev server
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:5173", "*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Include routers
+# Register routers
+app.include_router(auth.router, prefix="/api/v1")
+app.include_router(assets.router, prefix="/api/v1")
 app.include_router(claims.router, prefix="/api/v1")
+app.include_router(policies.router, prefix="/api/v1")
+app.include_router(tools.router, prefix="/api/v1")
 app.include_router(tier1.router, prefix="/api/v1")
 app.include_router(tier2.router, prefix="/api/v1")
 app.include_router(tier3.router, prefix="/api/v1")
 
-# Endpoint for submitting claims
-@app.post("/submit-claim/")
-def submit_claim(claim: ClaimRequest):
-    db = SessionLocal()
-    new_claim = Claim(**claim.dict())
-    db.add(new_claim)
-    db.commit()
-    db.refresh(new_claim)
-    return {"message": "Claim submitted successfully!", "claim": new_claim}
 
-# Run the application
+@app.get("/")
+def root():
+    return {
+        "name": "EasyInsure API",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "status": "running",
+    }
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

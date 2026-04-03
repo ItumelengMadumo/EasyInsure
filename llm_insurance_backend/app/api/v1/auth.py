@@ -1,87 +1,87 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
-from jose import JWTError, jwt
-from app.models.user import User
-from app.services.auth_service import create_access_token, verify_password, get_password_hash
+
 from app.database import get_db
+from app.models.models import User
+from app.services.auth_service import create_access_token, verify_password, hash_password
+from app.services.security import get_current_user, require_role
+from app.schemas import UserCreate, UserLogin, Token
 from app.core.config import settings
-from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
-import secrets
 
-router = APIRouter()
+router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-# Email configuration
-conf = ConnectionConfig(
-    MAIL_USERNAME="your_email@example.com",
-    MAIL_PASSWORD="your_email_password",
-    MAIL_FROM="your_email@example.com",
-    MAIL_PORT=587,
-    MAIL_SERVER="smtp.gmail.com",
-    MAIL_TLS=True,
-    MAIL_SSL=False,
-    USE_CREDENTIALS=True
-)
 
-@router.post("/login")
-def login(username: str, password: str, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.username == username).first()
-    if not user or not verify_password(password, user.password):
+@router.post("/login", response_model=Token)
+def login(payload: UserLogin, db: Session = Depends(get_db)):
+    # In DEV_MODE, accept any credentials
+    if settings.DEV_MODE:
+        token = create_access_token({
+            "sub": payload.username,
+            "role": "superuser",
+            "user_id": 1,
+        })
+        return {"access_token": token, "token_type": "bearer"}
+
+    user = db.query(User).filter(User.username == payload.username).first()
+    if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Invalid username or password")
 
-    token = create_access_token({"sub": user.username, "role": user.role})
+    token = create_access_token({
+        "sub": user.username,
+        "role": user.role,
+        "user_id": user.id,
+    })
     return {"access_token": token, "token_type": "bearer"}
 
+
 @router.post("/register")
-def register(username: str, password: str, role: str, db: Session = Depends(get_db)):
-    existing_user = db.query(User).filter(User.username == username).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Username already exists")
+def register(payload: UserCreate, db: Session = Depends(get_db)):
+    existing = db.query(User).filter(
+        (User.username == payload.username) | (User.email == payload.email)
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Username or email already exists")
 
-    hashed_password = get_password_hash(password)
-    new_user = User(username=username, password=hashed_password, role=role)
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return {"message": "User registered successfully", "user": {"username": new_user.username, "role": new_user.role}}
-
-@router.post("/add_user")
-def add_user(superuser_username: str, username: str, password: str, role: str, db: Session = Depends(get_db)):
-    superuser = db.query(User).filter(User.username == superuser_username).first()
-    if not superuser or superuser.role != "superuser":
-        raise HTTPException(status_code=403, detail="Only superusers can add users")
-
-    existing_user = db.query(User).filter(User.username == username).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Username already exists")
-
-    hashed_password = get_password_hash(password)
-    new_user = User(username=username, password=hashed_password, role=role)
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return {"message": "User added successfully", "user": {"username": new_user.username, "role": new_user.role}}
-
-@router.post("/reset_password")
-def reset_password(username: str, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.username == username).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # Generate a temporary password
-    temp_password = secrets.token_urlsafe(8)
-    hashed_password = get_password_hash(temp_password)
-    user.password = hashed_password
-    db.commit()
-
-    # Send the temporary password via email
-    message = MessageSchema(
-        subject="Password Reset",
-        recipients=[user.email],  # Ensure the User model has an email field
-        body=f"Your temporary password is: {temp_password}",
-        subtype="plain"
+    new_user = User(
+        username=payload.username,
+        email=payload.email,
+        hashed_password=hash_password(payload.password),
+        role=payload.role,
     )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return {
+        "message": "User registered successfully",
+        "user": {"id": new_user.id, "username": new_user.username, "role": new_user.role},
+    }
 
-    fm = FastMail(conf)
-    fm.send_message(message)
 
-    return {"message": "Temporary password sent to your email"}
+@router.post("/add-user")
+def add_user(
+    payload: UserCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role("superuser")),
+):
+    existing = db.query(User).filter(User.username == payload.username).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Username already exists")
+
+    new_user = User(
+        username=payload.username,
+        email=payload.email,
+        hashed_password=hash_password(payload.password),
+        role=payload.role,
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return {
+        "message": "User added successfully",
+        "user": {"id": new_user.id, "username": new_user.username, "role": new_user.role},
+    }
+
+
+@router.get("/me")
+def get_me(current_user: dict = Depends(get_current_user)):
+    return current_user

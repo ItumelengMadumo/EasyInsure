@@ -1,31 +1,27 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Claim, ProcessedClaim  # Assuming you have a ProcessedClaim model defined
-from app.llm import process_with_tier1_llm  # Assuming you have an LLM processing function
+from app.models.models import Claim
+from app.services.security import require_role
+from app.services.decision_pipeline import process_claim
 
-router = APIRouter()
+router = APIRouter(prefix="/tier1", tags=["Tier 1 Claims"])
 
-@router.get("/tier1/claims")
-def get_tier1_claims(db: Session = Depends(get_db)):
-    # Query the database for all claims
-    claims = db.query(Claim).all()
-    
-    processed_claims = []
-    for claim in claims:
-        # Retrieve the tier information from the database
-        if claim.tier == 1:
-            # Process the claim with the tier1 LLM
-            llm_response = process_with_tier1_llm(claim.to_dict())
-            
-            # Save the LLM response and generate a report
-            processed_claim = ProcessedClaim(
-                claim_id=claim.id,
-                llm_response=llm_response,
-                report=f"Report for claim {claim.id}: {llm_response['summary']}"
-            )
-            db.add(processed_claim)
-            processed_claims.append(processed_claim)
-    
-    db.commit()
-    return {"processed_tier1_claims": [pc.to_dict() for pc in processed_claims]}
+
+@router.get("/claims")
+def get_tier1_claims(
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_role("junior_officer", "intermediate_officer", "senior_officer", "superuser")),
+):
+    claims = db.query(Claim).filter(Claim.tier == 1).all()
+    return [
+        {
+            "id": c.id,
+            "claim_number": c.claim_number,
+            "description": c.description,
+            "status": c.status,
+            "amount_requested": c.amount_requested,
+            "suggested_payout": c.suggested_payout,
+        }
+        for c in claims
+    ]

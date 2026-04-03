@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EasyInsure — Insurance Management Platform</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="login-screen" class="screen active">
+        <div class="login-card">
+            <div class="logo">
+                <h1>🛡️ EasyInsure</h1>
+                <p>AI-Powered Insurance Platform</p>
+            </div>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="login-username">Username</label>
+                    <input type="text" id="login-username" placeholder="Enter username" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" placeholder="Enter password" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+                <p class="text-muted text-center">Demo: use any credentials in dev mode</p>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main App Shell -->
+    <div id="app-shell" class="screen">
+        <!-- Sidebar -->
+        <nav id="sidebar">
+            <div class="sidebar-header">
+                <h2>🛡️ EasyInsure</h2>
+                <span id="user-role-badge" class="badge">Superuser</span>
+            </div>
+            <ul class="nav-links">
+                <li><a href="#" data-page="dashboard" class="nav-link active">📊 Dashboard</a></li>
+                <li><a href="#" data-page="assets" class="nav-link">🏠 My Assets</a></li>
+                <li><a href="#" data-page="policies" class="nav-link">📄 Policies</a></li>
+                <li><a href="#" data-page="claims" class="nav-link">📋 Claims</a></li>
+                <li><a href="#" data-page="tools" class="nav-link">🧮 Calculators</a></li>
+                <li><a href="#" data-page="reports" class="nav-link">📈 Reports</a></li>
+                <li id="nav-users" style="display:none"><a href="#" data-page="users" class="nav-link">👥 Users</a></li>
+            </ul>
+            <div class="sidebar-footer">
+                <button id="logout-btn" class="btn btn-outline btn-full">Logout</button>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main id="main-content">
+            <!-- Top Bar -->
+            <header id="topbar">
+                <h3 id="page-title">Dashboard</h3>
+                <div class="topbar-right">
+                    <span id="user-display">devuser</span>
+                </div>
+            </header>
+
+            <!-- Page Container -->
+            <div id="page-container">
+
+                <!-- ═══ DASHBOARD ═══ -->
+                <section id="page-dashboard" class="page active">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-number" id="stat-total-assets">0</div>
+                            <div class="stat-label">Total Assets</div>
+                        </div>
+                        <div class="stat-card success">
+                            <div class="stat-number" id="stat-insured">0</div>
+                            <div class="stat-label">Insured</div>
+                        </div>
+                        <div class="stat-card warning">
+                            <div class="stat-number" id="stat-pending">0</div>
+                            <div class="stat-label">Claims Pending</div>
+                        </div>
+                        <div class="stat-card danger">
+                            <div class="stat-number" id="stat-flagged">0</div>
+                            <div class="stat-label">Fraud Flagged</div>
+                        </div>
+                    </div>
+                    <div class="detail-grid">
+                        <div class="card">
+                            <h3>Asset Portfolio Value</h3>
+                            <div id="dashboard-portfolio"></div>
+                        </div>
+                        <div class="card">
+                            <h3>Recent Claims</h3>
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Claim #</th>
+                                        <th>Asset</th>
+                                        <th>Amount</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dashboard-claims-table">
+                                    <tr><td colspan="4" class="text-center text-muted">Loading...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ═══ ASSETS (Portfolio View) ═══ -->
+                <section id="page-assets" class="page">
+                    <div class="page-header">
+                        <h2>My Assets</h2>
+                        <button class="btn btn-primary" onclick="showModal('new-asset-modal')">+ Register Asset</button>
+                    </div>
+                    <div class="filters">
+                        <select id="filter-asset-type">
+                            <option value="">All Types</option>
+                            <option value="vehicle">Vehicle</option>
+                            <option value="property">Property</option>
+                            <option value="electronics">Electronics</option>
+                            <option value="furniture">Furniture</option>
+                            <option value="machinery">Machinery</option>
+                        </select>
+                        <select id="filter-insured">
+                            <option value="">All</option>
+                            <option value="insured">Insured</option>
+                            <option value="uninsured">Uninsured</option>
+                        </select>
+                    </div>
+                    <div id="assets-grid" class="assets-grid">
+                        <p class="text-muted">Loading assets...</p>
+                    </div>
+                </section>
+
+                <!-- ═══ ASSET DETAIL ═══ -->
+                <section id="page-asset-detail" class="page">
+                    <button class="btn btn-outline mb-1" onclick="navigateTo('assets')">← Back to Assets</button>
+                    <div class="detail-grid">
+                        <div class="card">
+                            <h3>Asset Information</h3>
+                            <div id="asset-info"></div>
+                        </div>
+                        <div class="card">
+                            <h3>Current Valuation</h3>
+                            <div id="asset-valuation"></div>
+                        </div>
+                        <div class="card full-width">
+                            <h3>Valuation History</h3>
+                            <div id="asset-history"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ═══ CLAIMS ═══ -->
+                <section id="page-claims" class="page">
+                    <div class="page-header">
+                        <h2>Claims Management</h2>
+                        <button class="btn btn-primary" onclick="openNewClaimModal()">+ New Claim</button>
+                    </div>
+                    <div class="filters">
+                        <select id="filter-status">
+                            <option value="">All Statuses</option>
+                            <option value="submitted">Submitted</option>
+                            <option value="processing">Processing</option>
+                            <option value="reviewed">Reviewed</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
+                        <select id="filter-tier">
+                            <option value="">All Tiers</option>
+                            <option value="1">Tier 1</option>
+                            <option value="2">Tier 2</option>
+                            <option value="3">Tier 3</option>
+                        </select>
+                    </div>
+                    <div class="card">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Claim #</th>
+                                    <th>Asset</th>
+                                    <th>Type</th>
+                                    <th>Amount</th>
+                                    <th>Tier</th>
+                                    <th>Status</th>
+                                    <th>Fraud</th>
+                                    <th>Suggested</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="claims-table">
+                                <tr><td colspan="9" class="text-center text-muted">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- ═══ CLAIM DETAIL ═══ -->
+                <section id="page-claim-detail" class="page">
+                    <button class="btn btn-outline mb-1" onclick="navigateTo('claims')">← Back to Claims</button>
+                    <div class="detail-grid">
+                        <div class="card">
+                            <h3>Claim Information</h3>
+                            <div id="claim-info"></div>
+                        </div>
+                        <div class="card">
+                            <h3>Asset at Claim Time</h3>
+                            <div id="claim-asset-info"></div>
+                        </div>
+                        <div class="card">
+                            <h3>Risk & Depreciation</h3>
+                            <div id="claim-analysis"></div>
+                        </div>
+                        <div class="card">
+                            <h3>Fraud Assessment</h3>
+                            <div id="claim-fraud"></div>
+                        </div>
+                        <div class="card full-width" id="claim-decision-card">
+                            <h3>Decision</h3>
+                            <div id="claim-decision">
+                                <div class="decision-box">
+                                    <div class="form-group">
+                                        <label>Suggested Payout</label>
+                                        <div class="suggested-value" id="detail-suggested-payout">R0.00</div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="approved-payout">Final Payout (Editable)</label>
+                                        <input type="number" id="approved-payout" step="0.01" placeholder="Enter approved amount">
+                                    </div>
+                                    <div class="btn-group">
+                                        <button class="btn btn-success" onclick="approveClaim()">✅ Approve</button>
+                                        <button class="btn btn-danger" onclick="showRejectDialog()">❌ Reject</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card full-width">
+                            <h3>Audit Trail</h3>
+                            <div id="claim-audit"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ═══ POLICIES ═══ -->
+                <section id="page-policies" class="page">
+                    <div class="page-header">
+                        <h2>Policies</h2>
+                        <button class="btn btn-primary" onclick="openNewPolicyModal()">+ New Policy</button>
+                    </div>
+                    <div class="card">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Policy #</th>
+                                    <th>Type</th>
+                                    <th>Premium</th>
+                                    <th>Assets</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="policies-table">
+                                <tr><td colspan="6" class="text-center text-muted">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- ═══ CALCULATORS ═══ -->
+                <section id="page-tools" class="page">
+                    <h2>Calculation Tools</h2>
+                    <div class="tools-grid">
+                        <!-- Asset-specific Calculator -->
+                        <div class="card">
+                            <h3>📊 Asset Valuation</h3>
+                            <p class="text-muted mb-1">Select a registered asset to see its live valuation and risk profile.</p>
+                            <div class="form-group">
+                                <label>Select Asset</label>
+                                <select id="tool-asset-select">
+                                    <option value="">-- Select an asset --</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-primary btn-full" onclick="calculateAssetValuation()">Get Valuation & Risk</button>
+                            <div id="asset-calc-result" class="result-box" style="display:none"></div>
+                        </div>
+
+                        <!-- Generic Risk Calculator -->
+                        <div class="card">
+                            <h3>🎯 Risk / Premium Calculator</h3>
+                            <form id="risk-form">
+                                <div class="form-group">
+                                    <label>Asset Type</label>
+                                    <select id="risk-asset-type">
+                                        <option value="vehicle">Vehicle</option>
+                                        <option value="property">Property</option>
+                                        <option value="electronics">Electronics</option>
+                                        <option value="life">Life</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Asset Value (R)</label>
+                                    <input type="number" id="risk-asset-value" value="150000" step="1000">
+                                </div>
+                                <div class="form-group">
+                                    <label>Driver Age</label>
+                                    <input type="number" id="risk-driver-age" value="30">
+                                </div>
+                                <div class="form-group">
+                                    <label>Location</label>
+                                    <input type="text" id="risk-location" value="Sandton">
+                                </div>
+                                <div class="form-group">
+                                    <label>Previous Claims</label>
+                                    <input type="number" id="risk-prev-claims" value="0">
+                                </div>
+                                <div class="form-group">
+                                    <label>Driving Experience (years)</label>
+                                    <input type="number" id="risk-experience" value="5">
+                                </div>
+                                <button type="submit" class="btn btn-primary btn-full">Calculate Premium</button>
+                            </form>
+                            <div id="risk-result" class="result-box" style="display:none"></div>
+                        </div>
+
+                        <!-- Generic Depreciation Calculator -->
+                        <div class="card">
+                            <h3>📉 Depreciation Calculator</h3>
+                            <form id="depreciation-form">
+                                <div class="form-group">
+                                    <label>Purchase Price (R)</label>
+                                    <input type="number" id="dep-price" value="50000" step="1000">
+                                </div>
+                                <div class="form-group">
+                                    <label>Purchase Date</label>
+                                    <input type="date" id="dep-date" value="2023-01-15">
+                                </div>
+                                <div class="form-group">
+                                    <label>Asset Type</label>
+                                    <select id="dep-asset-type">
+                                        <option value="vehicle">Vehicle</option>
+                                        <option value="property">Property</option>
+                                        <option value="electronics">Electronics</option>
+                                        <option value="furniture">Furniture</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Condition</label>
+                                    <select id="dep-condition">
+                                        <option value="excellent">Excellent (+10%)</option>
+                                        <option value="average" selected>Average (0%)</option>
+                                        <option value="poor">Poor (-20%)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Excess (R)</label>
+                                    <input type="number" id="dep-excess" value="500">
+                                </div>
+                                <div class="form-group">
+                                    <label>Valuation Type</label>
+                                    <select id="dep-valuation">
+                                        <option value="ACV">ACV (Actual Cash Value)</option>
+                                        <option value="AGREED">Agreed Value</option>
+                                    </select>
+                                </div>
+                                <button type="submit" class="btn btn-primary btn-full">Calculate Depreciation</button>
+                            </form>
+                            <div id="depreciation-result" class="result-box" style="display:none"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ═══ REPORTS ═══ -->
+                <section id="page-reports" class="page">
+                    <h2>Reports</h2>
+                    <div class="card">
+                        <p class="text-muted">Reports will be generated from processed claims. Select a claim to view its full report.</p>
+                    </div>
+                </section>
+
+                <!-- ═══ USERS ═══ -->
+                <section id="page-users" class="page">
+                    <div class="page-header">
+                        <h2>User Management</h2>
+                        <button class="btn btn-primary" onclick="showModal('new-user-modal')">+ Add User</button>
+                    </div>
+                    <div class="card">
+                        <p class="text-muted">User management panel — superuser only.</p>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- ═══ MODALS ═══ -->
+
+    <!-- Register Asset Modal -->
+    <div id="new-asset-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Register New Asset</h3>
+                <button class="btn-close" onclick="hideModal('new-asset-modal')">&times;</button>
+            </div>
+            <form id="new-asset-form">
+                <div class="form-group">
+                    <label>Asset Type</label>
+                    <select id="asset-type" required onchange="toggleAssetFields()">
+                        <option value="vehicle">Vehicle</option>
+                        <option value="property">Property</option>
+                        <option value="electronics">Electronics</option>
+                        <option value="furniture">Furniture</option>
+                        <option value="machinery">Machinery</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <input type="text" id="asset-description" placeholder="e.g., 2022 Toyota Corolla">
+                </div>
+                <div class="form-group">
+                    <label>Purchase Price (R)</label>
+                    <input type="number" id="asset-price" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label>Purchase Date</label>
+                    <input type="date" id="asset-purchase-date" required>
+                </div>
+                <div class="form-group">
+                    <label>Condition</label>
+                    <select id="asset-condition">
+                        <option value="excellent">Excellent</option>
+                        <option value="average" selected>Average</option>
+                        <option value="poor">Poor</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Serial / VIN Number</label>
+                    <input type="text" id="asset-serial" placeholder="Optional">
+                </div>
+                <!-- Vehicle fields -->
+                <div id="vehicle-fields">
+                    <div class="form-group">
+                        <label>Make</label>
+                        <input type="text" id="asset-make" placeholder="e.g., Toyota">
+                    </div>
+                    <div class="form-group">
+                        <label>Model</label>
+                        <input type="text" id="asset-model" placeholder="e.g., Corolla">
+                    </div>
+                    <div class="form-group">
+                        <label>Year</label>
+                        <input type="number" id="asset-year" placeholder="e.g., 2022">
+                    </div>
+                </div>
+                <!-- Property fields -->
+                <div id="property-fields" style="display:none">
+                    <div class="form-group">
+                        <label>Address</label>
+                        <input type="text" id="asset-address" placeholder="Full address">
+                    </div>
+                    <div class="form-group">
+                        <label>Square Footage</label>
+                        <input type="number" id="asset-sqft" step="0.1">
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-full">Register Asset</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- New Claim Modal -->
+    <div id="new-claim-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Submit New Claim</h3>
+                <button class="btn-close" onclick="hideModal('new-claim-modal')">&times;</button>
+            </div>
+            <form id="new-claim-form">
+                <div class="form-group">
+                    <label>Select Insured Asset</label>
+                    <select id="claim-asset-id" required>
+                        <option value="">-- Select an insured asset --</option>
+                    </select>
+                    <small class="text-muted" id="claim-asset-value-hint"></small>
+                </div>
+                <div class="form-group">
+                    <label>Claim Type</label>
+                    <select id="claim-type" required>
+                        <option value="collision">Collision</option>
+                        <option value="theft">Theft</option>
+                        <option value="fire">Fire</option>
+                        <option value="natural_disaster">Natural Disaster</option>
+                        <option value="liability">Liability</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="claim-description" rows="3" required placeholder="Describe the incident..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Incident Date</label>
+                    <input type="datetime-local" id="claim-incident-date">
+                </div>
+                <div class="form-group">
+                    <label>Incident Location</label>
+                    <input type="text" id="claim-incident-location" placeholder="e.g., Sandton, Johannesburg">
+                </div>
+                <div class="form-group">
+                    <label>Amount Requested (R)</label>
+                    <input type="number" id="claim-amount" step="0.01">
+                </div>
+                <button type="submit" class="btn btn-primary btn-full">Submit Claim</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- New Policy Modal -->
+    <div id="new-policy-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Create New Policy</h3>
+                <button class="btn-close" onclick="hideModal('new-policy-modal')">&times;</button>
+            </div>
+            <form id="new-policy-form">
+                <div class="form-group">
+                    <label>Select Assets to Insure</label>
+                    <div id="policy-asset-checkboxes" class="checkbox-list">
+                        <p class="text-muted">No uninsured assets available</p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Valuation Type</label>
+                    <select id="policy-valuation">
+                        <option value="ACV">ACV (Actual Cash Value)</option>
+                        <option value="AGREED">Agreed Value</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Premium Amount (R)</label>
+                    <input type="number" id="policy-premium" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label>Coverage Details</label>
+                    <textarea id="policy-coverage" rows="2" placeholder="Describe coverage..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Duration (months)</label>
+                    <input type="number" id="policy-duration" value="12" required>
+                </div>
+                <div class="form-group">
+                    <label>Start Date</label>
+                    <input type="datetime-local" id="policy-start-date" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-full">Create Policy</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Reject Modal -->
+    <div id="reject-modal" class="modal-overlay">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h3>Reject Claim</h3>
+                <button class="btn-close" onclick="hideModal('reject-modal')">&times;</button>
+            </div>
+            <form id="reject-form">
+                <div class="form-group">
+                    <label>Reason for Rejection</label>
+                    <textarea id="reject-reason" rows="3" required placeholder="Provide reason..."></textarea>
+                </div>
+                <button type="submit" class="btn btn-danger btn-full">Confirm Rejection</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <script src="js/api.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
