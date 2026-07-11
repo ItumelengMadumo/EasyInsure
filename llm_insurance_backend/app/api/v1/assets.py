@@ -185,6 +185,9 @@ def add_manual_valuation(
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
 
+    if user["role"] == "client" and asset.user_id != user.get("user_id"):
+        raise HTTPException(status_code=403, detail="Access denied")
+
     val = record_valuation(
         asset, db,
         method="manual",

@@ -24,6 +24,9 @@ def submit_claim(
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
 
+    if user["role"] == "client" and asset.user_id != user.get("user_id"):
+        raise HTTPException(status_code=403, detail="Access denied")
+
     # Asset must be insured
     if asset.policy_id is None:
         raise HTTPException(status_code=400, detail="Asset is not insured. Create a policy first.")

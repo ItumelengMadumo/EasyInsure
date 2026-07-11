@@ -27,6 +27,11 @@ def create_policy(
     if len(assets) != len(payload.asset_ids):
         raise HTTPException(status_code=400, detail="One or more asset IDs are invalid")
 
+    if user["role"] == "client":
+        not_owned = [a.id for a in assets if a.user_id != user_id]
+        if not_owned:
+            raise HTTPException(status_code=403, detail=f"Access denied: assets not owned by you: {not_owned}")
+
     # Check none are already insured
     already_insured = [a for a in assets if a.policy_id is not None]
     if already_insured:
@@ -104,6 +109,9 @@ def get_policy(
     policy = db.query(Policy).filter(Policy.id == policy_id).first()
     if not policy:
         raise HTTPException(status_code=404, detail="Policy not found")
+
+    if user["role"] == "client" and policy.user_id != user.get("user_id"):
+        raise HTTPException(status_code=403, detail="Access denied")
 
     assets_data = []
     for a in policy.assets:
