@@ -1,6 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.config import settings
+
+# Fail fast on unsafe configuration before anything else boots.
+settings.validate()
+
 from app.database.session import Base, engine
 from app.api.v1 import auth, assets, claims, policies, tools, tier1, tier2, tier3
 
@@ -14,15 +19,18 @@ from app.models.models import (  # noqa: F401
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="EasyInsure — LLM-Powered Insurance Platform",
+    title=f"{settings.COMPANY_NAME} — LLM-Powered Insurance Platform",
     description="AI-assisted claims processing, underwriting, fraud detection & decision support.",
     version="2.0.0",
+    docs_url=None if settings.is_production else "/docs",
+    redoc_url=None if settings.is_production else "/redoc",
+    openapi_url=None if settings.is_production else "/openapi.json",
 )
 
-# CORS — allow frontend dev server
+# CORS — origins are explicit, config-driven, and never "*"
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173", "*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -42,9 +50,9 @@ app.include_router(tier3.router, prefix="/api/v1")
 @app.get("/")
 def root():
     return {
-        "name": "EasyInsure API",
-        "version": "1.0.0",
-        "docs": "/docs",
+        "name": f"{settings.COMPANY_NAME} API",
+        "version": "2.0.0",
+        "docs": "/docs" if not settings.is_production else None,
         "status": "running",
     }
 

@@ -46,7 +46,7 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
         username=payload.username,
         email=payload.email,
         hashed_password=hash_password(payload.password),
-        role=payload.role,
+        role="client",  # public self-registration can never grant staff roles
     )
     db.add(new_user)
     db.commit()

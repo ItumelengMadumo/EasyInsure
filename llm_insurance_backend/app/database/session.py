@@ -9,6 +9,9 @@ if settings.DEV_MODE:
     DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "easyinsure_dev.db")
     DATABASE_URL = f"sqlite:///{DB_PATH}"
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+elif settings.DATABASE_URL:
+    # Works with any managed Postgres provider
+    engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
 else:
     DATABASE_URL = (
         f"postgresql://{settings.DATABASE_CONFIG['user']}:"
