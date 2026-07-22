@@ -6,8 +6,8 @@ if (deploymentRegion && deploymentRegion !== DATA_REGION) {
   throw new Error(`Refusing deployment in ${deploymentRegion}. EasyInsure durable resources must deploy in ${DATA_REGION}.`);
 }
 
-if (BEDROCK_REGION === DATA_REGION) {
-  throw new Error('Bedrock processing and durable-data regions must remain explicitly distinct for this architecture.');
+if (BEDROCK_REGION !== DATA_REGION) {
+  throw new Error(`EasyInsure requires a single primary region; data=${DATA_REGION}, Bedrock endpoint=${BEDROCK_REGION}.`);
 }
 
-console.log(`Regional boundary valid: durable data=${DATA_REGION}, Bedrock inference=${BEDROCK_REGION}`);
+console.log(`Regional configuration valid: application data and Bedrock endpoint=${DATA_REGION}`);

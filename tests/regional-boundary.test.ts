@@ -7,9 +7,9 @@ import {
 } from '../amplify/config/regions';
 import { buildInferencePayload, redactText } from '../amplify/functions/claims-copilot/privacy';
 
-describe('regional data boundary', () => {
-  it('keeps durable resources in Cape Town and AI inference in us-east-1', () => {
-    expect(DATA_REGION).toBe('af-south-1');
+describe('regional deployment boundary', () => {
+  it('keeps the application data plane and Bedrock endpoint in us-east-1', () => {
+    expect(DATA_REGION).toBe('us-east-1');
     expect(BEDROCK_REGION).toBe('us-east-1');
     expect(BEDROCK_INFERENCE_PROFILE_ID.startsWith('us.')).toBe(true);
   });
@@ -34,7 +34,7 @@ describe('Bedrock minimization', () => {
     expect(value).not.toContain('9001015009087');
   });
 
-  it('allowlists claim fields before cross-region inference', () => {
+  it('allowlists claim fields before model inference', () => {
     const payload = buildInferencePayload({
       owner: 'cognito-sub', policyId: 'private-policy', claimType: 'vehicle',
       description: 'Collision', amountRequested: 10_000,
