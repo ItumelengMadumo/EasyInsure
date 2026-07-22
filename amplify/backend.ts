@@ -1,5 +1,5 @@
 import { defineBackend } from '@aws-amplify/backend';
-import { Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { Duration, RemovalPolicy, Stack, Token } from 'aws-cdk-lib';
 import { Alarm, ComparisonOperator, Metric, TreatMissingData } from 'aws-cdk-lib/aws-cloudwatch';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { CfnBucket } from 'aws-cdk-lib/aws-s3';
@@ -16,9 +16,20 @@ import { postConfirmation } from './functions/post-confirmation/resource';
 import { claimsCopilot } from './functions/claims-copilot/resource';
 import { processClaim } from './functions/process-claim/resource';
 import { storage } from './storage/resource';
+import {
+  BEDROCK_FOUNDATION_MODEL_ID,
+  BEDROCK_INFERENCE_PROFILE_ID,
+  BEDROCK_PROFILE_DESTINATION_REGIONS,
+  BEDROCK_REGION,
+  DATA_REGION,
+} from './config/regions';
 
 const backend = defineBackend({ auth, data, storage, insuranceEngine, claimsCommand, postConfirmation, claimsCopilot, processClaim });
 const stack = Stack.of(backend.insuranceEngine.resources.lambda);
+
+if (!Token.isUnresolved(stack.region) && stack.region !== DATA_REGION) {
+  throw new Error(`EasyInsure durable resources must deploy in ${DATA_REGION}, not ${stack.region}`);
+}
 
 backend.auth.resources.userPool.grant(
   backend.postConfirmation.resources.lambda,
@@ -78,9 +89,21 @@ backend.insuranceEngine.resources.lambda.addToRolePolicy(new PolicyStatement({
   conditions: { StringEquals: { 'cloudwatch:namespace': 'EasyInsure' } },
 }));
 
+const inferenceProfileArn = stack.formatArn({
+  service: 'bedrock', region: BEDROCK_REGION, account: stack.account,
+  resource: 'inference-profile', resourceName: BEDROCK_INFERENCE_PROFILE_ID,
+});
 backend.claimsCopilot.resources.lambda.addToRolePolicy(new PolicyStatement({
   actions: ['bedrock:InvokeModel'],
-  resources: ['arn:aws:bedrock:*::foundation-model/*', 'arn:aws:bedrock:*:*:inference-profile/*'],
+  resources: [inferenceProfileArn],
+}));
+backend.claimsCopilot.resources.lambda.addToRolePolicy(new PolicyStatement({
+  actions: ['bedrock:InvokeModel'],
+  resources: BEDROCK_PROFILE_DESTINATION_REGIONS.map((region) => stack.formatArn({
+    service: 'bedrock', region, account: '', resource: 'foundation-model',
+    resourceName: BEDROCK_FOUNDATION_MODEL_ID,
+  })),
+  conditions: { StringEquals: { 'bedrock:InferenceProfileArn': inferenceProfileArn } },
 }));
 
 new Alarm(stack, 'InsuranceEngineErrors', {
@@ -105,6 +128,7 @@ const bucket = backend.storage.resources.bucket;
 bucket.applyRemovalPolicy(RemovalPolicy.RETAIN);
 const cfnBucket = bucket.node.defaultChild as CfnBucket;
 cfnBucket.versioningConfiguration = { status: 'Enabled' };
+cfnBucket.replicationConfiguration = undefined;
 cfnBucket.lifecycleConfiguration = {
   rules: [{ id: 'expire-quarantine', status: 'Enabled', prefix: 'quarantine/', expirationInDays: 7 }],
 };
@@ -112,6 +136,8 @@ cfnBucket.lifecycleConfiguration = {
 backend.addOutput({
   custom: {
     awsRegion: stack.region,
+    durableDataRegion: DATA_REGION,
+    bedrockInferenceRegion: BEDROCK_REGION,
     claimsDeadLetterQueueUrl: claimsDlq.queueUrl,
   },
 });
