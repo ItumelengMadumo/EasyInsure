@@ -18,6 +18,9 @@ env/
 
 # Node
 node_modules/
+dist/
+.amplify/
+*.tsbuildinfo
 
 # IDE / OS
 .vscode/
