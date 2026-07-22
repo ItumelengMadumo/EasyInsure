@@ -5,6 +5,7 @@ import { claimsCopilot } from '../functions/claims-copilot/resource';
 import { processClaim } from '../functions/process-claim/resource';
 
 const staff = ['junior_officer', 'intermediate_officer', 'senior_officer', 'superuser'];
+const readOnlyStaff = ['junior_officer', 'intermediate_officer'];
 const senior = ['senior_officer', 'superuser'];
 
 const schema = a.schema({
@@ -74,7 +75,7 @@ const schema = a.schema({
     approvalTimestamp: a.datetime(),
   }).secondaryIndexes((index) => [index('owner'), index('policyNumber')]).authorization((allow) => [
     allow.ownerDefinedIn('owner').to(['read']),
-    allow.groups(staff).to(['read']),
+    allow.groups(readOnlyStaff).to(['read']),
     allow.groups(senior),
   ]),
 
@@ -101,7 +102,7 @@ const schema = a.schema({
     idempotencyKey: a.string().required(),
   }).secondaryIndexes((index) => [index('owner'), index('status'), index('assignedOfficerId'), index('idempotencyKey')]).authorization((allow) => [
     allow.ownerDefinedIn('owner').to(['read']),
-    allow.groups(staff).to(['read']),
+    allow.groups(readOnlyStaff).to(['read']),
     allow.groups(senior),
   ]),
 
@@ -151,7 +152,6 @@ const schema = a.schema({
     correlationId: a.string().required(),
     occurredAt: a.datetime().required(),
   }).secondaryIndexes((index) => [index('entityId'), index('correlationId')]).authorization((allow) => [
-    allow.groups(['superuser']).to(['read']),
     allow.groups(senior).to(['read']),
   ]),
 

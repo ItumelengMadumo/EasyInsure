@@ -24,6 +24,13 @@ describe('regional deployment boundary', () => {
     const backend = readFileSync('amplify/backend.ts', 'utf8');
     expect(backend).toContain('includeExecutionData: false');
   });
+
+  it('does not overlap read-only and senior model authorization directives', () => {
+    const dataSchema = readFileSync('amplify/data/resource.ts', 'utf8');
+    expect(dataSchema).toContain("const readOnlyStaff = ['junior_officer', 'intermediate_officer']");
+    expect(dataSchema).toContain("const senior = ['senior_officer', 'superuser']");
+    expect(dataSchema).not.toContain("allow.groups(['superuser']).to(['read']),\n    allow.groups(senior).to(['read'])");
+  });
 });
 
 describe('Bedrock minimization', () => {
