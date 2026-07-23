@@ -3,6 +3,7 @@ import { insuranceEngine } from '../functions/insurance-engine/resource';
 import { claimsCommand } from '../functions/claims-command/resource';
 import { claimsCopilot } from '../functions/claims-copilot/resource';
 import { processClaim } from '../functions/process-claim/resource';
+import { scanEvidence } from '../functions/scan-evidence/resource';
 
 const staff = ['junior_officer', 'intermediate_officer', 'senior_officer', 'superuser'];
 const readOnlyStaff = ['junior_officer', 'intermediate_officer'];
@@ -201,7 +202,7 @@ const schema = a.schema({
   generateClaimCopilot: a.query().arguments({
     claim: a.json().required(), deterministicOutputs: a.json().required(), evidenceText: a.string(),
   }).returns(a.ref('CopilotResult')).authorization((allow) => [allow.groups(staff)]).handler(a.handler.function(claimsCopilot)),
-}).authorization((allow) => [allow.resource(claimsCommand), allow.resource(processClaim)]);
+}).authorization((allow) => [allow.resource(claimsCommand), allow.resource(processClaim), allow.resource(scanEvidence)]);
 
 // The runtime schema remains the source of truth. The current TypeScript compiler
 // exceeds its instantiation limit on this domain-sized schema, so clients use a

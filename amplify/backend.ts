@@ -15,6 +15,7 @@ import { claimsCommand } from './functions/claims-command/resource';
 import { postConfirmation } from './functions/post-confirmation/resource';
 import { claimsCopilot } from './functions/claims-copilot/resource';
 import { processClaim } from './functions/process-claim/resource';
+import { scanEvidence } from './functions/scan-evidence/resource';
 import { storage } from './storage/resource';
 import {
   BEDROCK_FOUNDATION_MODEL_ID,
@@ -24,7 +25,7 @@ import {
   DATA_REGION,
 } from './config/regions';
 
-const backend = defineBackend({ auth, data, storage, insuranceEngine, claimsCommand, postConfirmation, claimsCopilot, processClaim });
+const backend = defineBackend({ auth, data, storage, insuranceEngine, claimsCommand, postConfirmation, claimsCopilot, processClaim, scanEvidence });
 const stack = Stack.of(backend.insuranceEngine.resources.lambda);
 
 if (!Token.isUnresolved(stack.region) && stack.region !== DATA_REGION) {
@@ -134,6 +135,13 @@ cfnBucket.replicationConfiguration = undefined;
 cfnBucket.lifecycleConfiguration = {
   rules: [{ id: 'expire-quarantine', status: 'Enabled', prefix: 'quarantine/', expirationInDays: 7 }],
 };
+
+// scanEvidence shares the storage nested stack (resourceGroupName: 'storage') so these
+// grants stay same-stack: cross-stack grants here would need a live bucket-ARN token from
+// the storage stack while the onUpload trigger needs a live function-ARN token the other
+// way, reproducing the auth/function circular dependency fixed earlier this session.
+bucket.grantRead(backend.scanEvidence.resources.lambda, 'quarantine/*');
+bucket.grantWrite(backend.scanEvidence.resources.lambda, 'evidence/*');
 
 backend.addOutput({
   custom: {

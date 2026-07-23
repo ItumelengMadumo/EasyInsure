@@ -1,8 +1,14 @@
-# EasyInsure — LLM-Powered Insurance Claims & Underwriting Platform
+# EasyInsure — AI-Assisted Insurance Claims Platform
 
-An AI-assisted insurance platform that processes claims, detects fraud, calculates premiums, determines payouts using depreciation logic, and generates decision support — all with a **human-in-the-loop** approval workflow.
+An AI-assisted insurance platform that processes claims, detects fraud, calculates premiums, and
+determines payouts using depreciation logic — with a **human-in-the-loop** approval workflow.
 
-> **Core Principle:** LLMs assist decisions — they do NOT make final financial decisions. All premiums and payouts require human approval.
+> **Core Principle:** LLMs assist decisions — they do NOT make final financial decisions. All
+> premiums and payouts require human approval.
+
+Built on **AWS Amplify Gen2**: Cognito for auth, AppSync/GraphQL + DynamoDB for data, S3 for
+evidence storage, Lambda for business logic, Step Functions for claim processing, and Bedrock for
+LLM-assisted analysis.
 
 ---
 
@@ -12,43 +18,44 @@ An AI-assisted insurance platform that processes claims, detects fraud, calculat
 - [System Philosophy](#system-philosophy)
 - [Project Structure](#project-structure)
 - [Backend](#backend)
-  - [Database Models](#database-models)
-  - [Risk Engine](#risk-engine)
-  - [Depreciation Engine](#depreciation-engine)
-  - [Fraud Detection](#fraud-detection)
-  - [Decision Pipeline](#decision-pipeline)
-  - [LLM Tier Architecture](#llm-tier-architecture)
-  - [API Endpoints](#api-endpoints)
-  - [Authentication & Roles](#authentication--roles)
+  - [Data Model](#data-model)
+  - [Auth & Roles](#auth--roles)
+  - [Insurance Engine](#insurance-engine)
+  - [Claims Workflow](#claims-workflow)
+  - [Evidence Storage](#evidence-storage)
 - [Frontend](#frontend)
 - [Setup & Running](#setup--running)
-- [Environment Variables](#environment-variables)
-- [Development Phases](#development-phases)
+- [Security Considerations](#security-considerations)
 
 ---
 
 ## Architecture Overview
 
 ```
-User / Browser UI
-       ↓
-FastAPI Backend (Python)
-       ↓
-┌──────────────────────────┐
-│   Processing Pipeline    │
-│                          │
-│  1. LLM Data Extraction  │
-│  2. Tier Assignment       │
-│  3. Risk Engine           │
-│  4. Depreciation Engine   │
-│  5. Fraud Detection       │
-│  6. Decision Support      │
-│  7. Human Approval Gate   │
-└──────────────────────────┘
-       ↓
-PostgreSQL Database
-       ↓
-OpenAI API (LLM)
+React / Vite SPA (src/)
+       │  Amplify Auth (Cognito) + generateClient()
+       ▼
+AppSync GraphQL API ──authorizes via── Cognito User Pool groups
+       │
+       ├── submitClaim / approveClaim / rejectClaim / assignOfficer / startClaimProcessing
+       │        → claims-command (Lambda)
+       │
+       ├── runInsuranceEngine (assignTier / calculateRisk / calculateDepreciation / detectFraud)
+       │        → insurance-engine (Python 3.12 Lambda, deterministic, no AWS/HTTP deps)
+       │
+       └── generateClaimCopilot
+                → claims-copilot (Lambda) → Amazon Bedrock
+
+startClaimProcessing kicks off a Step Functions workflow (validate → calculate → copilot →
+persist), each stage run by the process-claim Lambda. On failure, a KMS-encrypted SQS dead-letter
+queue captures the payload for replay.
+
+Evidence files upload directly to S3 (quarantine/ prefix, Cognito-identity-scoped). An S3 onUpload
+trigger (scan-evidence Lambda) validates and promotes them to evidence/ before a claim can proceed
+past the validate stage.
+
+DynamoDB (via AppSync) is the source of truth. Cognito PostConfirmation (post-confirmation Lambda)
+assigns new self-registered users to the client group.
 ```
 
 ---
@@ -58,11 +65,9 @@ OpenAI API (LLM)
 | Component               | Responsibility                                |
 | ----------------------- | --------------------------------------------- |
 | **LLM**                 | Extraction, summarization, anomaly hints      |
-| **Risk Engine**         | Premium calculation (deterministic logic)     |
-| **Depreciation Engine** | Asset valuation (current value at claim time) |
-| **Fraud Detection**     | Rule-based anomaly flagging                   |
-| **Backend**             | Orchestration & control                       |
-| **Database**            | Source of truth                               |
+| **Insurance Engine**    | Premium, depreciation, and fraud calculation (deterministic) |
+| **Claims Workflow**     | Orchestration & control (Step Functions)      |
+| **DynamoDB**            | Source of truth                               |
 | **Human (Officer)**     | Final premium & payout approval               |
 
 ### Key Design Principles
@@ -70,8 +75,8 @@ OpenAI API (LLM)
 1. **LLM ≠ decision maker** — AI supports, humans decide
 2. **Pricing is deterministic** — actuarial logic, no randomness
 3. **Everything is explainable** — every risk factor has a reason
-4. **Full audit trail** — who approved what, when, and any adjustments
-5. **Data sanitization** — no PII sent to LLMs
+4. **Full audit trail** — `AuditEvent` records who did what, when
+5. **Data sanitization** — PII is redacted before anything reaches Bedrock (`claims-copilot/privacy.ts`)
 6. **Human-in-the-loop** — no financial transaction without human confirmation
 
 ---
@@ -80,311 +85,123 @@ OpenAI API (LLM)
 
 ```
 EasyInsure/
-├── llm_insurance_backend/
-│   ├── main.py                          # FastAPI app entry point
-│   ├── requirements.txt
-│   └── app/
-│       ├── schemas.py                   # Pydantic request/response models
-│       ├── core/
-│       │   └── config.py                # Settings & environment config
-│       ├── database/
-│       │   ├── session.py               # SQLAlchemy engine & session
-│       │   └── __init__.py
-│       ├── models/
-│       │   ├── models.py                # All SQLAlchemy models
-│       │   └── __init__.py
-│       ├── services/
-│       │   ├── risk_engine.py           # Premium calculation engine
-│       │   ├── depreciation_engine.py   # Asset valuation engine
-│       │   ├── fraud_detection.py       # Fraud signal detection
-│       │   ├── decision_pipeline.py     # Full claim processing pipeline
-│       │   ├── auth_service.py          # JWT & password utilities
-│       │   ├── security.py              # Auth dependencies
-│       │   ├── llm_service.py           # LLM tier router
-│       │   ├── tier1_llm.py             # Tier 1 LLM (GPT-3.5)
-│       │   ├── tier2_llm.py             # Tier 2 LLM (GPT-4 Turbo)
-│       │   └── tier3_llm.py             # Tier 3 LLM (GPT-4)
-│       └── api/v1/
-│           ├── auth.py                  # Login, register, user management
-│           ├── claims.py                # Full claim CRUD + pipeline
-│           ├── policies.py              # Policy & asset management
-│           ├── tools.py                 # Risk & depreciation calculators
-│           ├── tier1.py                 # Tier 1 claim listing
-│           ├── tier2.py                 # Tier 2 claim listing
-│           └── tier3.py                 # Tier 3 claim listing
-├── frontend/
-│   ├── index.html                       # Single-page app shell
-│   ├── css/styles.css                   # Full UI styling
-│   └── js/
-│       ├── api.js                       # API client (fetch wrapper)
-│       └── app.js                       # UI logic & rendering
-└── Docs/
-    ├── System Overview Doc.txt
-    ├── Database Schema Document.txt
-    └── Boilerplate Documentation.txt
+├── amplify/                       # Backend — everything here is infra-as-code (CDK via Amplify Gen2)
+│   ├── backend.ts                 # Wires resources together: IAM grants, Step Functions, DLQ, alarms
+│   ├── backend.test.ts            # Vitest tests for backend.ts / data model / PII redaction
+│   ├── auth/resource.ts           # Cognito: groups, post-confirmation trigger
+│   ├── data/resource.ts           # AppSync/DynamoDB schema: models, enums, mutations, authorization
+│   ├── storage/resource.ts        # S3 bucket: quarantine/evidence/extracted access + onUpload trigger
+│   ├── config/regions.ts          # Single-region deployment boundary (us-east-1)
+│   ├── scripts/assert-regional-boundary.ts   # CI guard, run via `npm run check:region`
+│   └── functions/
+│       ├── insurance-engine/      # Python 3.12 — risk, depreciation, fraud, tier assignment
+│       ├── claims-command/        # AppSync resolver: submit/approve/reject/assign/startProcessing
+│       ├── claims-copilot/        # Bedrock-backed claim analysis + PII redaction
+│       ├── process-claim/         # Step Functions stage handler (validate/calculate/copilot/persist)
+│       ├── scan-evidence/         # S3 onUpload trigger: validates & promotes evidence documents
+│       └── post-confirmation/     # Cognito trigger: assigns new users to the client group
+├── src/                           # Frontend — Vite + React + TypeScript
+│   ├── App.tsx                    # Authenticator-wrapped app shell (overview/assets/claims/review)
+│   ├── amplify.ts                 # Amplify.configure(amplify_outputs.json)
+│   └── styles.css
+├── public/                        # Frontend static assets
+├── index.html                     # Vite entry point
+├── vite.config.ts
+├── Docs/AMPLIFY_MIGRATION.md      # Architecture notes + production rollout checklist
+└── package.json                   # Single project: frontend build + backend CDK share one toolchain
 ```
 
 ---
 
 ## Backend
 
-### Database Models
-
-All models are defined in `app/models/models.py` using SQLAlchemy:
-
-| Table                | Purpose                                      |
-| -------------------- | -------------------------------------------- |
-| `users`              | All system users with role-based access      |
-| `policies`           | Insurance policies (ACV or Agreed Value)     |
-| `insured_assets`     | Assets covered by policies                   |
-| `claims`             | Claims with full lifecycle tracking          |
-| `depreciation_rates` | Configurable rates by asset type             |
-| `reports`            | System-generated analysis reports            |
-| `audit_trail`        | Every decision: who, what, when, adjustments |
-
-#### Human-in-the-Loop Fields
-
-Claims have both **suggested** and **approved** values:
-
-```
-suggested_payout  → system calculates
-approved_payout   → human decides
-approved_by       → who approved
-approval_timestamp → when
-```
-
-Policies similarly track `suggested_premium` vs `approved_premium`.
-
----
-
-### Risk Engine
-
-**File:** `app/services/risk_engine.py`
-
-Deterministic actuarial logic for premium calculation.
-
-**Formula:**
-
-```
-premium = base_rate × (1 + total_risk_score)
-```
-
-**Risk Factors (configurable):**
-
-| Factor          | Condition             | Weight |
-| --------------- | --------------------- | ------ |
-| Young Driver    | Age < 25              | +40%   |
-| High-Risk Area  | Location in risk list | +30%   |
-| Expensive Asset | Value > R200,000      | +50%   |
-| Poor History    | 3+ previous claims    | +35%   |
-| Good History    | 0 previous claims     | −20%   |
-| New Driver      | < 2 years experience  | +25%   |
-
-**Base Rates:** Vehicle R500, Property R800, Electronics R200, Life R1000.
-
-**Risk Levels:** low (< 0.2), medium (< 0.6), high (< 1.0), critical (≥ 1.0).
-
----
-
-### Depreciation Engine
-
-**File:** `app/services/depreciation_engine.py`
-
-Calculates current asset value at claim time.
-
-**Depreciation Formula:**
-
-```
-value = purchase_price × (1 − rate)^years
-```
-
-**Market Value Adjustment:**
-
-```
-final_value = min(depreciated_value, market_value)
-```
-
-**Condition Adjustments:**
-
-| Condition | Adjustment |
-| --------- | ---------- |
-| Excellent | +10%       |
-| Average   | 0%         |
-| Poor      | −20%       |
-
-**Payout Formula:**
-
-```
-payout = adjusted_value − excess
-```
-
-**Policy Types:**
-
-- **ACV (Actual Cash Value):** Depreciated value payout
-- **Agreed Value:** Fixed payout regardless of depreciation
-
----
-
-### Fraud Detection
-
-**File:** `app/services/fraud_detection.py`
-
-Rule-based anomaly detection signals:
-
-| Signal           | Trigger                               | Severity |
-| ---------------- | ------------------------------------- | -------- |
-| Repeated Claims  | 3+ claims in 12 months                | High     |
-| High-Value Spike | Claim > 80% of asset value            | High     |
-| Early Claim      | Incident < 30 days after policy start | Medium   |
-| Excessive Amount | Claim > R500,000                      | High     |
-
-**Overall Risk:** Based on count and severity of triggered signals.
-
----
-
-### Decision Pipeline
-
-**File:** `app/services/decision_pipeline.py`
-
-End-to-end orchestration:
-
-1. **Assign tier** — based on claim amount (< R50K → T1, < R200K → T2, else T3)
-2. **Run depreciation** — calculate current asset value
-3. **Run risk engine** — evaluate risk score
-4. **Run fraud detection** — flag anomalies
-5. **Generate report** — store analysis results
-6. **Return decision support** — suggested payout, risk breakdown, recommendation
-7. **Human reviews** → approves/rejects with optional adjustment
-8. **Audit trail stored** — full record of decision
-
-**Decision Flow:**
-
-```
-System generates:
-  → Suggested payout
-  → Risk score & breakdown
-  → Fraud assessment
-  → Recommendation
-
-Officer reviews:
-  → Adjusts payout if needed
-  → Approves or rejects
-
-Final decision stored as authoritative outcome
-```
-
----
-
-### LLM Tier Architecture
-
-| Tier | Use Case          | Model         | Routing Condition |
-| ---- | ----------------- | ------------- | ----------------- |
-| 1    | Simple claims     | GPT-3.5 Turbo | Amount < R50,000  |
-| 2    | Moderate claims   | GPT-4 Turbo   | Amount < R200,000 |
-| 3    | Complex/high-risk | GPT-4         | Amount ≥ R200,000 |
-
-LLM responsibilities:
-
-- **Data extraction** — unstructured text → structured JSON
-- **Decision support** — summaries, risk suggestions, missing info prompts
-- **Fraud assistance** — pattern and inconsistency detection
-
----
-
-### API Endpoints
-
-#### Authentication (`/api/v1/auth`)
-
-| Method | Path        | Description           | Access        |
-| ------ | ----------- | --------------------- | ------------- |
-| POST   | `/login`    | Login, get JWT token  | Public        |
-| POST   | `/register` | Self-registration     | Public        |
-| POST   | `/add-user` | Admin adds user       | Superuser     |
-| GET    | `/me`       | Get current user info | Authenticated |
-
-#### Claims (`/api/v1/claims`)
-
-| Method | Path            | Description                    | Access        |
-| ------ | --------------- | ------------------------------ | ------------- |
-| POST   | `/`             | Submit new claim               | Authenticated |
-| GET    | `/`             | List claims (filtered by role) | Authenticated |
-| GET    | `/{id}`         | Full claim detail + reports    | Authenticated |
-| POST   | `/{id}/process` | Run processing pipeline        | Officers      |
-| POST   | `/{id}/approve` | Approve with payout amount     | Senior/Super  |
-| POST   | `/{id}/reject`  | Reject with reason             | Senior/Super  |
-
-#### Policies (`/api/v1/policies`)
-
-| Method | Path           | Description            | Access        |
-| ------ | -------------- | ---------------------- | ------------- |
-| POST   | `/`            | Create policy          | Authenticated |
-| GET    | `/`            | List policies          | Authenticated |
-| GET    | `/{id}`        | Policy detail + assets | Authenticated |
-| POST   | `/{id}/assets` | Add asset to policy    | Authenticated |
-
-#### Calculation Tools (`/api/v1/tools`)
-
-| Method | Path                      | Description                | Access        |
-| ------ | ------------------------- | -------------------------- | ------------- |
-| POST   | `/calculate-risk`         | Risk / premium calculator  | Authenticated |
-| POST   | `/calculate-depreciation` | Depreciation / payout calc | Authenticated |
-
-#### Tier Endpoints (`/api/v1/tier{1,2,3}`)
-
-| Method | Path      | Description         | Access          |
-| ------ | --------- | ------------------- | --------------- |
-| GET    | `/claims` | List claims by tier | Role-restricted |
-
----
-
-### Authentication & Roles
-
-JWT-based authentication with role-based access control.
-
-| Role                     | Access Level                                 |
-| ------------------------ | -------------------------------------------- |
-| **Superuser**            | Full control, system config, user management |
-| **Senior Officer**       | All claims, approve/reject, assign cases     |
-| **Intermediate Officer** | Tier 1 & 2 claims, processing                |
-| **Junior Officer**       | Tier 1 claims only, basic processing         |
-| **Client**               | Submit claims, view own claims only          |
-
-**Dev Mode:** Set `DEV_MODE=true` in `.env` to bypass authentication (returns superuser context).
+### Data Model
+
+Defined in `amplify/data/resource.ts` (AppSync/DynamoDB):
+
+| Model            | Purpose                                                       |
+| ---------------- | -------------------------------------------------------------- |
+| `UserProfile`     | Profile info + business role, owner-editable                  |
+| `Asset`           | Insured item (vehicle/property/electronics/etc.)               |
+| `AssetValuation`  | Valuation history for an asset                                 |
+| `Policy`          | Coverage terms, suggested/approved premium                     |
+| `Claim`           | Full claim lifecycle: status, tier, risk score, fraud flag, suggested/approved payout |
+| `ClaimDocument`   | Evidence file metadata + status (`QUARANTINED` → `CLEAN`/`REJECTED` → optionally `EXTRACTED`) |
+| `ClaimAnalysis`   | Stored deterministic + LLM output per claim (versioned)        |
+| `AuditEvent`      | Immutable record of who did what, when, with before/after values |
+| `ProcessingJob`   | Step Functions execution tracking (status, current step, retries) |
+
+Claims carry both **suggested** and **approved** values — `suggestedPayout` is system-calculated,
+`approvedPayout`/`approvedBy`/`approvalTimestamp` are only set by a human officer decision.
+`Policy` follows the same pattern with `suggestedPremium`/`approvedPremium`.
+
+### Auth & Roles
+
+Cognito User Pool groups, enforced via AppSync `@auth` authorization rules on every model:
+
+| Role                     | Access                                                        |
+| ------------------------ | --------------------------------------------------------------- |
+| `superuser`               | Full control                                                    |
+| `senior_officer`          | Approve/reject claims, assign officers, manage policies         |
+| `intermediate_officer`    | Read assigned claims/policies, request info, run the pipeline   |
+| `junior_officer`          | Read-only on claims/policies                                    |
+| `client`                  | Own assets/policies/claims only                                 |
+
+Self-registration always lands new users in `client` — staff roles require manual promotion
+(`aws cognito-idp admin-add-user-to-group`).
+
+### Insurance Engine
+
+`amplify/functions/insurance-engine/engines.py` — pure, dependency-free Python:
+
+- **Tier assignment:** ≤ R50,000 → Tier 1, ≤ R200,000 → Tier 2, else Tier 3
+- **Risk/premium:** `premium = base_rate × (1 + risk_score)`, with weighted factors (young driver
+  +40%, high-risk area +30%, expensive asset (>R200k) +50%, poor claims history +35%, no prior
+  claims −20%, inexperienced driver +25%). Base rates: vehicle R500, property R800, electronics
+  R200, life R1000.
+- **Depreciation/payout:** `value = purchase_price × (1 − annual_rate) ^ years_elapsed`, capped by
+  market value, adjusted for condition (excellent +10%, average 0%, poor −20%), minus excess.
+  Annual rates: vehicle 15%, electronics 25%, property 2%, furniture 10%, machinery 12%. Agreed-
+  value policies pay the agreed amount instead of the depreciated value.
+- **Fraud signals (rule-based):** 3+ claims in 12 months, claim > 80% of asset value, incident
+  within 30 days of policy start, claim > R500,000 — two or more high-severity signals → `high`
+  risk recommendation to flag for senior review.
+
+### Claims Workflow
+
+`startClaimProcessing` (staff-only) starts a Step Functions state machine
+(`ClaimsWorkflow` in `amplify/backend.ts`) that invokes `process-claim` through four stages:
+
+1. **validate** — confirms the claim is `PROCESSING` and every attached `ClaimDocument` is
+   `CLEAN`/`EXTRACTED` (not still `QUARANTINED`)
+2. **calculate** — calls `insurance-engine` for tier, risk, depreciation, and fraud
+3. **copilot** — calls `claims-copilot` (Bedrock) for a structured summary/recommendation
+4. **persist** — writes a `ClaimAnalysis`, moves the claim to `REVIEW`, logs an `AuditEvent`
+
+Any stage failure routes to a KMS-encrypted SQS dead-letter queue via a `RecordWorkflowFailure`
+step, and CloudWatch alarms watch both Lambda errors and DLQ depth.
+
+### Evidence Storage
+
+`amplify/storage/resource.ts` — one S3 bucket (`easyinsureEvidence`), versioned, three prefixes:
+
+- `quarantine/{owner}/*` — client uploads land here first (owner read/write/delete only); expires
+  after 7 days via lifecycle rule
+- `evidence/{owner}/*` — promoted, validated documents (owner + staff read)
+- `extracted/*` — reserved for future text-extraction output (staff read)
+
+The `scan-evidence` Lambda fires on every upload, re-validates file size/type/checksum
+server-side, and promotes passing files from `quarantine/` to `evidence/`, updating the matching
+`ClaimDocument.status`. Files that fail validation are marked `REJECTED` and left to expire.
 
 ---
 
 ## Frontend
 
-The frontend is a **zero-dependency single-page app** (vanilla HTML/CSS/JS) located in `frontend/`.
-
-### Pages
-
-| Page             | Features                                                                                    |
-| ---------------- | ------------------------------------------------------------------------------------------- |
-| **Dashboard**    | Stats overview, recent claims grid                                                          |
-| **Claims**       | Full CRUD, filtering by status/tier, submit new claims                                      |
-| **Claim Detail** | Risk breakdown, depreciation details, fraud assessment, approve/reject with editable payout |
-| **Policies**     | Create and list policies, add assets                                                        |
-| **Calculators**  | Interactive risk premium calculator + depreciation tool                                     |
-| **Reports**      | View generated reports from processed claims                                                |
-| **Users**        | User management (superuser only)                                                            |
-
-### Key UI Features
-
-- **Decision Gate:** Officers see suggested payout, can edit the amount, and approve/reject
-- **Risk Breakdown:** Visual factor-by-factor display showing which risk factors applied
-- **Fraud Flags:** Visual indicators for flagged claims
-- **Audit Trail:** Full history of every decision on a claim
-- **Role-Based Navigation:** Menu items shown based on user role
-
-To serve the frontend during development:
-
-```bash
-cd frontend
-python -m http.server 3000
-```
-
-Then open `http://localhost:3000`.
+`src/App.tsx` wraps the app in Amplify UI's `<Authenticator>` (custom-branded header) and renders
+a role-agnostic `Shell` with four views: **Overview** (portfolio metrics), **Assets** (register/
+list insured items), **Claims** (submit with evidence upload, list), and **Review** (claims in
+`REVIEW` status). Amplify config is loaded from `amplify_outputs.json` via `src/amplify.ts`.
 
 ---
 
@@ -392,90 +209,56 @@ Then open `http://localhost:3000`.
 
 ### Prerequisites
 
-- Python 3.10+
-- PostgreSQL (running on port 5433 or as configured)
-- Database named `Insurance_llm`
+- Node.js 20–24 (see `engines` in `package.json`)
+- An AWS account with credentials configured locally (`aws configure` or equivalent)
 
-### Backend Setup
-
-```bash
-cd llm_insurance_backend
-
-# Create virtual environment
-python -m venv EasyInsure
-# Windows:
-EasyInsure\Scripts\activate
-# Linux/Mac:
-# source EasyInsure/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Create .env file (see Environment Variables below)
-
-# Run the server
-python main.py
-# or
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-The API docs are available at `http://localhost:8000/docs` (Swagger UI).
-
-### Frontend Setup
+### Backend + Frontend Setup
 
 ```bash
-cd frontend
-python -m http.server 3000
+npm install
+
+# Deploys Cognito/AppSync/DynamoDB/S3/Lambda/Step Functions to a personal sandbox stack and
+# writes amplify_outputs.json with real config. Leave running for backend hot-reload, or use
+# `npm run sandbox:once` for a single one-shot deploy.
+npm run sandbox
+
+# In a second terminal:
+npm run dev
 ```
 
-Open `http://localhost:3000` in your browser.
+Open the URL Vite prints (typically `http://localhost:5173`).
 
----
+When you're done, tear down the sandbox stack with `npm run sandbox:delete` so it stops incurring
+AWS costs.
 
-## Environment Variables
+### Other useful scripts
 
-Create a `.env` file in `llm_insurance_backend/`:
-
-```env
-# Database
-DB_NAME=Insurance_llm
-DB_USER=postgres
-DB_PASSWORD=admin
-DB_HOST=localhost
-DB_PORT=5433
-
-# Authentication
-SECRET_KEY=your-secure-secret-key-here
-
-# LLM
-OPENAI_API_KEY=sk-your-openai-key
-
-# Development
-DEV_MODE=true
+```bash
+npm run check:region   # guards the single-region (us-east-1) deployment boundary
+npm run typecheck      # tsc -b
+npm run lint           # eslint .
+npm test               # vitest run (amplify/backend.test.ts)
+npm run verify         # check:region && lint && typecheck && test && build
 ```
 
----
-
-## Development Phases
-
-| Phase | Focus                                                                                 | Status      |
-| ----- | ------------------------------------------------------------------------------------- | ----------- |
-| 1     | Database models, Risk Engine, Depreciation Engine, Fraud Detection, Decision Pipeline | ✅ Complete |
-| 2     | OpenAI integration, tier routing, LLM extraction                                      | 🔧 Ready    |
-| 3     | Auth + roles, Frontend UI                                                             | ✅ Complete |
-| 4     | Advanced pricing, ML models, AWS deployment                                           | 📋 Planned  |
+See `Docs/AMPLIFY_MIGRATION.md` for the production rollout checklist (Amplify Hosting bootstrap,
+staff group provisioning, monitoring, POPIA review, etc.).
 
 ---
 
 ## Security Considerations
 
-- JWT tokens for authentication
-- Role-based access control on every endpoint
-- No PII sent to LLM APIs (only asset type, incident description)
-- Passwords hashed with bcrypt
-- API keys stored in environment variables, never in code
-- CORS configured for frontend origin
-- All database queries use parameterized statements (SQLAlchemy ORM)
+- Authentication via Cognito (User Pool + Identity Pool); no custom JWT/password handling
+- Authorization via AppSync `@auth` directives + Cognito group membership on every model —
+  enforced server-side by AppSync, not by application code
+- PII (names, emails, phone numbers, SA ID numbers) is redacted before any data reaches Bedrock
+  (`amplify/functions/claims-copilot/privacy.ts`, covered by `amplify/backend.test.ts`)
+- Bedrock access is IAM-scoped to a specific approved inference profile/model, not open
+  `bedrock:InvokeModel *`
+- Evidence uploads are quarantined and server-side re-validated (size/type/checksum) before being
+  trusted, independent of client-side checks
+- Deployment is restricted to a single region (`amplify/config/regions.ts`,
+  `amplify/scripts/assert-regional-boundary.ts`) enforced both locally and in the pipeline
 
 ---
 
