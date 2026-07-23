@@ -125,7 +125,6 @@ new Alarm(stack, 'ClaimsDeadLetterMessages', {
 });
 
 const bucket = backend.storage.resources.bucket;
-bucket.applyRemovalPolicy(RemovalPolicy.RETAIN);
 const cfnBucket = bucket.node.defaultChild as CfnBucket;
 cfnBucket.versioningConfiguration = { status: 'Enabled' };
 cfnBucket.replicationConfiguration = undefined;

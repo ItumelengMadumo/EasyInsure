@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "sandbox": "ampx sandbox",
+    "sandbox:once": "ampx sandbox --once",
     "sandbox:delete": "ampx sandbox delete",
     "typecheck": "tsc -b --pretty false",
     "check:region": "tsx scripts/assert-regional-boundary.ts",
