@@ -31,10 +31,13 @@ if (!Token.isUnresolved(stack.region) && stack.region !== DATA_REGION) {
   throw new Error(`EasyInsure durable resources must deploy in ${DATA_REGION}, not ${stack.region}`);
 }
 
-backend.auth.resources.userPool.grant(
-  backend.postConfirmation.resources.lambda,
-  'cognito-idp:AdminAddUserToGroup',
-);
+// Scoped by a wildcard pool ID (not the live UserPool ARN token) so the function stack
+// doesn't take a hard dependency on the auth stack, which together with the UserPool's
+// trigger reference back to this function would form a nested-stack circular dependency.
+backend.postConfirmation.resources.lambda.addToRolePolicy(new PolicyStatement({
+  actions: ['cognito-idp:AdminAddUserToGroup'],
+  resources: [stack.formatArn({ service: 'cognito-idp', resource: 'userpool', resourceName: '*' })],
+}));
 
 // A DLQ is provisioned now and consumed by the processing state machine introduced
 // with the workflow handlers. Retention gives operators time to replay safely.
