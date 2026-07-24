@@ -10,7 +10,6 @@ import { PoliciesPage } from '../pages/PoliciesPage';
 import { ClaimsPage } from '../pages/ClaimsPage';
 import { DocumentsPage } from '../pages/DocumentsPage';
 import { ReviewPage } from '../pages/ReviewPage';
-import { EstimatorPage } from '../pages/EstimatorPage';
 import { ProfilePage } from '../pages/ProfilePage';
 
 const emptyPortfolio: Portfolio = { assets: [], policies: [], claims: [], documents: [], profile: null };
@@ -21,8 +20,7 @@ const nav: { page: Page; label: string; icon: string; section?: string }[] = [
   { page: 'claims', label: 'Claims', icon: '◫' },
   { page: 'documents', label: 'Document locker', icon: '□' },
   { page: 'review', label: 'Review queue', icon: '✓', section: 'Operations' },
-  { page: 'estimator', label: 'Premium estimator', icon: '↗', section: 'Tools' },
-  { page: 'profile', label: 'Profile & security', icon: '○' },
+  { page: 'profile', label: 'Profile & security', icon: '○', section: 'Account' },
 ];
 
 export function Workspace({ signOut }: { signOut?: () => void }) {
@@ -68,7 +66,6 @@ export function Workspace({ signOut }: { signOut?: () => void }) {
   else if (page === 'claims') content = <ClaimsPage {...props} />;
   else if (page === 'documents') content = <DocumentsPage {...props} />;
   else if (page === 'review') content = <ReviewPage {...props} groups={groups} />;
-  else if (page === 'estimator') content = <EstimatorPage />;
   else if (page === 'profile') content = <ProfilePage {...props} role={role} />;
   else content = <OverviewPage portfolio={portfolio} go={setPage} displayName={displayName} />;
 

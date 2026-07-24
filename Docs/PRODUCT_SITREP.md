@@ -44,12 +44,12 @@ src/
 │   └── format.ts                   currency, date and label formatting
 ├── pages/
 │   ├── OverviewPage.tsx            portfolio and operational summary
+│   ├── LandingPage.tsx             public product story and estimator
 │   ├── AssetsPage.tsx              asset register and creation
 │   ├── PoliciesPage.tsx            policy and cover visibility
 │   ├── ClaimsPage.tsx              claim submission, filtering and detail
 │   ├── DocumentsPage.tsx           scanned evidence locker
 │   ├── ReviewPage.tsx              human decision gate
-│   ├── EstimatorPage.tsx           deterministic premium preview
 │   └── ProfilePage.tsx             identity, role and security posture
 ├── types.ts                        frontend domain contracts
 └── styles.css                      responsive visual system

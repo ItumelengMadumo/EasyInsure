@@ -5,7 +5,6 @@ export type Page =
   | 'claims'
   | 'documents'
   | 'review'
-  | 'estimator'
   | 'profile';
 
 export type Asset = {
@@ -19,6 +18,18 @@ export type Asset = {
   model?: string | null;
   year?: number | null;
   serialNumber?: string | null;
+  registrationNumber?: string | null;
+  vin?: string | null;
+  mileageKm?: number | null;
+  address?: string | null;
+  squareFootage?: number | null;
+  constructionType?: string | null;
+  roofType?: string | null;
+  occupancyType?: string | null;
+  securityFeatures?: string | null;
+  purchaseSource?: string | null;
+  assetUse?: string | null;
+  portable?: boolean | null;
   policyId?: string | null;
 };
 
