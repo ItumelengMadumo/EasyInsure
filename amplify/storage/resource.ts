@@ -9,8 +9,8 @@ export const storage = defineStorage({
     'quarantine/{entity_id}/*': [allow.entity('identity').to(['read', 'write', 'delete'])],
     'evidence/{entity_id}/*': [
       allow.entity('identity').to(['read']),
-      allow.groups(['junior_officer', 'intermediate_officer', 'senior_officer', 'superuser']).to(['read']),
+      allow.groups(['junior_officer', 'intermediate_officer', 'senior_officer', 'developer', 'superuser']).to(['read']),
     ],
-    'extracted/*': [allow.groups(['junior_officer', 'intermediate_officer', 'senior_officer', 'superuser']).to(['read'])],
+    'extracted/*': [allow.groups(['junior_officer', 'intermediate_officer', 'senior_officer', 'developer', 'superuser']).to(['read'])],
   }),
 });

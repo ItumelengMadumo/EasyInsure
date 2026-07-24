@@ -11,6 +11,7 @@ export const auth = defineAuth({
     'junior_officer',
     'intermediate_officer',
     'senior_officer',
+    'developer',
     'superuser',
   ],
   triggers: { postConfirmation },

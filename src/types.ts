@@ -31,6 +31,22 @@ export type Asset = {
   assetUse?: string | null;
   portable?: boolean | null;
   policyId?: string | null;
+  status?: string | null;
+  searchText?: string | null;
+  registeredAt?: string | null;
+  lastUpdatedAt?: string | null;
+};
+
+export type PolicyApplication = {
+  id: string; owner: string; applicationNumber?: string | null; assetId?: string | null;
+  assetType: string; schemaVersion: string; status: string; answers: Record<string, unknown>;
+  completedSections: string[]; missingInformation: string[]; latestAssessmentId?: string | null;
+  quotedPremium?: number | null; quoteExpiresAt?: string | null; submittedAt?: string | null; lastUpdatedAt: string;
+};
+
+export type PremiumAssessment = {
+  id: string; applicationId: string; indicativePremium: number; rangeLow: number; rangeHigh: number;
+  riskScore: number; factors: Array<{ name: string; factor: number; reason: string }>; assumptions: string[];
 };
 
 export type Policy = {
@@ -48,13 +64,15 @@ export type Policy = {
 
 export type Claim = {
   id: string;
-  claimNumber: string;
+  owner: string;
+  claimNumber?: string | null;
+  policeCaseNumber?: string | null;
   policyId: string;
   assetId: string;
   claimType: string;
   description?: string;
   incidentDate: string;
-  amountRequested: number;
+  amountRequested?: number | null;
   status: string;
   tier?: number | null;
   riskScore?: number | null;
@@ -63,6 +81,10 @@ export type Claim = {
   suggestedPayout?: number | null;
   approvedPayout?: number | null;
   assignedOfficerId?: string | null;
+  currentMilestone?: string | null;
+  submittedAt?: string | null;
+  closedAt?: string | null;
+  lastActivityAt?: string | null;
 };
 
 export type ClaimDocument = {
@@ -72,6 +94,37 @@ export type ClaimDocument = {
   mediaType: string;
   byteSize: number;
   status: string;
+  category?: string | null;
+  visibility?: string | null;
+};
+
+export type ClaimAssignment = {
+  id: string; claimId: string; userSubject: string; userDisplayNameSnapshot: string;
+  userRoleSnapshot: string; assignmentRole: string; isLead: boolean; active: boolean;
+  assignedAt: string; endedAt?: string | null;
+};
+export type ClaimAssessment = {
+  id: string; claimId: string; version: number; evidenceReviewed: string[];
+  coveredLossValue: number; repairEstimate?: number | null; replacementEstimate?: number | null;
+  policyLimit: number; excess: number; depreciation: number; exclusions: string[];
+  recommendedPayout: number; status: string; overrideReason?: string | null;
+};
+
+export type ClaimActivity = {
+  id: string; claimId: string; eventId: string; eventType: string; milestone: string;
+  actorDisplayNameSnapshot: string; actorRoleSnapshot: string; summary: string;
+  detail?: string | null; visibility: string; occurredAt: string;
+};
+
+export type ClaimCommunication = {
+  id: string; claimId: string; channel: string; direction: string; subject?: string | null;
+  body: string; senderDisplayNameSnapshot: string; senderRoleSnapshot: string;
+  deliveryState: string; occurredAt: string;
+};
+
+export type ClaimInternalNote = {
+  id: string; claimId: string; authorDisplayNameSnapshot: string; authorRoleSnapshot: string;
+  body: string; occurredAt: string;
 };
 
 export type Profile = {
@@ -86,7 +139,15 @@ export type Profile = {
 export type Portfolio = {
   assets: Asset[];
   policies: Policy[];
+  applications: PolicyApplication[];
+  premiumAssessments: PremiumAssessment[];
   claims: Claim[];
   documents: ClaimDocument[];
+  assignments: ClaimAssignment[];
+  activities: ClaimActivity[];
+  communications: ClaimCommunication[];
+  internalNotes: ClaimInternalNote[];
+  claimAssessments: ClaimAssessment[];
+  profiles: Profile[];
   profile: Profile | null;
 };

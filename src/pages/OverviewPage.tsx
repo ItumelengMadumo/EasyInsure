@@ -3,7 +3,7 @@ import { money } from '../lib/format';
 import type { Page, Portfolio } from '../types';
 
 export function OverviewPage({ portfolio, go, displayName }: { portfolio: Portfolio; go: (page: Page) => void; displayName: string }) {
-  const pending = portfolio.claims.filter((claim) => ['SUBMITTED', 'PROCESSING', 'REVIEW'].includes(claim.status)).length;
+  const pending = portfolio.claims.filter((claim) => !['CLOSED', 'PAID', 'REJECTED'].includes(claim.status)).length;
   const activePolicies = portfolio.policies.filter((policy) => policy.status.toLowerCase() === 'active').length;
   const protectedValue = portfolio.assets.reduce((sum, asset) => sum + asset.purchasePrice, 0);
   const flagged = portfolio.claims.filter((claim) => claim.fraudFlag).length;

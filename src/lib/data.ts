@@ -2,22 +2,53 @@ import { generateClient } from 'aws-amplify/data';
 import type { Portfolio } from '../types';
 
 export const client: any = generateClient();
+const values = (result: any) => result.data ?? [];
+const firstError = (results: any[]) => results.flatMap((result) => result.errors ?? [])[0];
 
-export async function loadPortfolio(): Promise<Portfolio> {
-  const [assets, policies, claims, documents, profiles] = await Promise.all([
-    client.models.Asset.list({}),
-    client.models.Policy.list({}),
-    client.models.Claim.list({}),
-    client.models.ClaimDocument.list({}),
-    client.models.UserProfile.list({}),
+export async function loadPortfolio(groups: string[] = []): Promise<Portfolio> {
+  const senior = groups.some((group) => ['senior_officer', 'superuser'].includes(group));
+  const staff = groups.some((group) => group.includes('officer') || ['developer', 'superuser'].includes(group));
+
+  if (staff && !senior) {
+    const [result, profiles] = await Promise.all([
+      client.queries.getAssignedCasePortfolio({}), client.models.UserProfile.list({}),
+    ]);
+    const baseError = firstError([result, profiles]);
+    if (baseError) throw new Error(baseError.message);
+    const caseData = (result.data ?? {}) as any;
+    return {
+      assets: caseData.assets ?? [], policies: caseData.policies ?? [], profiles: values(profiles),
+      applications: [], premiumAssessments: [],
+      claims: caseData.claims ?? [], documents: caseData.documents ?? [],
+      assignments: caseData.assignments ?? [], activities: caseData.activities ?? [],
+      communications: caseData.communications ?? [], internalNotes: caseData.internalNotes ?? [],
+      claimAssessments: caseData.claimAssessments ?? [],
+      profile: values(profiles)[0] ?? null,
+    };
+  }
+
+  const [assets, policies, profiles, applications, premiumAssessments] = await Promise.all([
+    client.models.Asset.list({}), client.models.Policy.list({}), client.models.UserProfile.list({}),
+    client.models.PolicyApplication.list({}), client.models.PremiumAssessment.list({}),
   ]);
-  const errors = [assets, policies, claims, documents, profiles].flatMap((result) => result.errors ?? []);
-  if (errors.length) throw new Error(errors[0].message);
+  const baseError = firstError([assets, policies, profiles, applications, premiumAssessments]);
+  if (baseError) throw new Error(baseError.message);
+  const requests = [
+    client.models.Claim.list({}), client.models.ClaimDocument.list({}),
+    client.models.ClaimAssignment.list({}), client.models.ClaimActivity.list({}),
+    client.models.ClaimCommunication.list({}),
+  ];
+  if (senior) requests.push(client.models.ClaimInternalNote.list({}));
+  if (senior) requests.push(client.models.ClaimAssessment.list({}));
+  const [claims, documents, assignments, activities, communications, internalNotes, claimAssessments] = await Promise.all(requests);
+  const error = firstError([claims, documents, assignments, activities, communications, ...(senior ? [internalNotes] : [])]);
+  if (error) throw new Error(error.message);
   return {
-    assets: assets.data ?? [],
-    policies: policies.data ?? [],
-    claims: claims.data ?? [],
-    documents: documents.data ?? [],
-    profile: profiles.data?.[0] ?? null,
+    assets: values(assets), policies: values(policies), profiles: values(profiles),
+    applications: values(applications), premiumAssessments: values(premiumAssessments),
+    claims: values(claims), documents: values(documents), assignments: values(assignments),
+    activities: values(activities), communications: values(communications),
+    internalNotes: senior ? values(internalNotes) : [], claimAssessments: senior ? values(claimAssessments) : [],
+    profile: values(profiles)[0] ?? null,
   };
 }

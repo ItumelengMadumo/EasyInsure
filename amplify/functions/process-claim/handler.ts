@@ -30,7 +30,7 @@ export const handler = async (event: { stage: string; state: State }): Promise<S
       data.models.Claim.get({ id: state.claimId }),
       data.models.ClaimDocument.list({ filter: { claimId: { eq: state.claimId } } }),
     ]);
-    if (!claim || claim.status !== 'PROCESSING') throw new Error('Claim is not in PROCESSING');
+    if (!claim || claim.status !== 'UNDER_ASSESSMENT') throw new Error('Claim is not under assessment');
     if (documents.data.some((document: { status: string }) => !['CLEAN', 'EXTRACTED'].includes(document.status))) throw new Error('Evidence scanning is incomplete');
     const [{ data: asset }, { data: policy }, previous] = await Promise.all([
       data.models.Asset.get({ id: claim.assetId }), data.models.Policy.get({ id: claim.policyId }),
@@ -50,13 +50,12 @@ export const handler = async (event: { stage: string; state: State }): Promise<S
     const engine = process.env.INSURANCE_ENGINE_FUNCTION_NAME;
     if (!engine) throw new Error('Insurance engine function is not configured');
     const call = (operation: string, payload: unknown) => invoke(engine, { arguments: { operation, payload } });
-    const [tier, risk, depreciation, fraud] = await Promise.all([
-      call('assignTier', { amount: claim.amountRequested }),
+    const [tier, risk, fraud] = await Promise.all([
+      call('assignTier', { amount: asset.purchasePrice }),
       call('calculateRisk', { assetType: asset.assetType, assetValue: asset.purchasePrice, previousClaimsCount: context.previousClaimDates.length }),
-      call('calculateDepreciation', { purchasePrice: asset.purchasePrice, purchaseDate: asset.purchaseDate, assetType: asset.assetType, condition: asset.condition, claimDate: claim.incidentDate, valuationType: policy.valuationType }),
-      call('detectFraud', { claimAmount: claim.amountRequested, assetValue: asset.purchasePrice, policyStartDate: policy.startDate, incidentDate: claim.incidentDate, previousClaimDates: context.previousClaimDates }),
+      call('detectFraud', { claimAmount: 0, assetValue: asset.purchasePrice, policyStartDate: policy.startDate, incidentDate: claim.incidentDate, previousClaimDates: context.previousClaimDates }),
     ]);
-    return { ...state, calculations: { tier, risk, depreciation, fraud } };
+    return { ...state, calculations: { tier, risk, fraud } };
   }
 
   if (event.stage === 'copilot') {
@@ -69,7 +68,7 @@ export const handler = async (event: { stage: string; state: State }): Promise<S
 
   if (event.stage === 'persist') {
     const context = state.context as { claim: { status: string } };
-    const calculations = state.calculations as { tier: { tier: number }; risk: { totalRiskScore: number }; depreciation: { suggestedPayout: number }; fraud: { isFlagged: boolean; recommendation: string } };
+    const calculations = state.calculations as { tier: { tier: number }; risk: { totalRiskScore: number }; fraud: { isFlagged: boolean; recommendation: string } };
     const copilot = state.copilot as { summary: string; recommendation: string; inconsistencies: string[]; missingInformation: string[]; modelId: string; promptVersion: string; confidence: number; warnings: string[]; latencyMs: number };
     const analysis = await data.models.ClaimAnalysis.create({
       claimId: state.claimId, version: 1, calculationInputs: state.context as never,
@@ -80,16 +79,23 @@ export const handler = async (event: { stage: string; state: State }): Promise<S
     });
     if (analysis.errors?.length) throw new Error(analysis.errors[0].message);
     const claim = await data.models.Claim.update({
-      id: state.claimId, status: 'REVIEW', tier: calculations.tier.tier,
-      riskScore: calculations.risk.totalRiskScore, suggestedPayout: calculations.depreciation.suggestedPayout,
+      id: state.claimId, status: 'UNDER_ASSESSMENT', currentMilestone: 'UNDER_ASSESSMENT', lastActivityAt: new Date().toISOString(), tier: calculations.tier.tier,
+      riskScore: calculations.risk.totalRiskScore,
       fraudFlag: calculations.fraud.isFlagged, fraudReason: calculations.fraud.recommendation,
     });
     if (claim.errors?.length) throw new Error(claim.errors[0].message);
+    await data.models.ClaimActivity.create({
+      owner: (state.context as { claim: { owner: string } }).claim.owner,
+      claimId: state.claimId, eventId: crypto.randomUUID(), eventType: 'INITIAL_REVIEW_COMPLETED',
+      milestone: 'UNDER_ASSESSMENT', actorSubject: 'system', actorDisplayNameSnapshot: 'EasyInsure assessment service',
+      actorRoleSnapshot: 'system', summary: 'Initial checks are complete. An assessor is reviewing the evidence and covered loss.',
+      visibility: 'CLIENT_VISIBLE', occurredAt: new Date().toISOString(), correlationId: state.correlationId,
+    });
     await data.models.ProcessingJob.update({ id: state.jobId, status: 'SUCCEEDED', currentStep: 'complete', completedAt: new Date().toISOString() });
     await data.models.AuditEvent.create({
       entityType: 'claim', entityId: state.claimId, action: 'analysis_completed', actorSubject: 'system',
       actorGroups: ['system'], previousValue: { status: context.claim.status } as never,
-      newValue: { status: 'REVIEW', analysisId: analysis.data?.id } as never,
+      newValue: { status: 'UNDER_ASSESSMENT', analysisId: analysis.data?.id, payoutPendingEvidenceReview: true } as never,
       correlationId: state.correlationId, occurredAt: new Date().toISOString(),
     });
     return state;

@@ -5,6 +5,11 @@ import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { CfnBucket } from 'aws-cdk-lib/aws-s3';
 import { Function as LambdaFunction } from 'aws-cdk-lib/aws-lambda';
 import { Queue, QueueEncryption } from 'aws-cdk-lib/aws-sqs';
+import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
+import { HttpApi, HttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
+import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
+import { LambdaFunction as LambdaTarget } from 'aws-cdk-lib/aws-events-targets';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { DefinitionBody, Fail, JsonPath, LogLevel, StateMachine, StateMachineType, TaskInput } from 'aws-cdk-lib/aws-stepfunctions';
 import { LambdaInvoke, SqsSendMessage } from 'aws-cdk-lib/aws-stepfunctions-tasks';
@@ -16,6 +21,9 @@ import { postConfirmation } from './functions/post-confirmation/resource';
 import { claimsCopilot } from './functions/claims-copilot/resource';
 import { processClaim } from './functions/process-claim/resource';
 import { scanEvidence } from './functions/scan-evidence/resource';
+import { communicationWorker } from './functions/communication-worker/resource';
+import { communicationWebhook } from './functions/communication-webhook/resource';
+import { assignmentWorker } from './functions/assignment-worker/resource';
 import { storage } from './storage/resource';
 import {
   BEDROCK_FOUNDATION_MODEL_ID,
@@ -25,7 +33,10 @@ import {
   DATA_REGION,
 } from './config/regions';
 
-const backend = defineBackend({ auth, data, storage, insuranceEngine, claimsCommand, postConfirmation, claimsCopilot, processClaim, scanEvidence });
+const backend = defineBackend({
+  auth, data, storage, insuranceEngine, claimsCommand, postConfirmation, claimsCopilot,
+  processClaim, scanEvidence, communicationWorker, communicationWebhook, assignmentWorker,
+});
 const stack = Stack.of(backend.insuranceEngine.resources.lambda);
 
 if (!Token.isUnresolved(stack.region) && stack.region !== DATA_REGION) {
@@ -47,6 +58,41 @@ const claimsDlq = new Queue(stack, 'ClaimsDeadLetterQueue', {
   retentionPeriod: Duration.days(14),
 });
 claimsDlq.applyRemovalPolicy(RemovalPolicy.RETAIN);
+
+const communicationDlq = new Queue(stack, 'CommunicationDeadLetterQueue', {
+  encryption: QueueEncryption.KMS_MANAGED,
+  retentionPeriod: Duration.days(14),
+});
+communicationDlq.applyRemovalPolicy(RemovalPolicy.RETAIN);
+const communicationQueue = new Queue(stack, 'CommunicationQueue', {
+  encryption: QueueEncryption.KMS_MANAGED,
+  visibilityTimeout: Duration.seconds(90),
+  retentionPeriod: Duration.days(7),
+  deadLetterQueue: { queue: communicationDlq, maxReceiveCount: 5 },
+});
+communicationQueue.applyRemovalPolicy(RemovalPolicy.RETAIN);
+backend.communicationWorker.resources.lambda.addEventSource(new SqsEventSource(communicationQueue, {
+  batchSize: 5, reportBatchItemFailures: true,
+}));
+communicationQueue.grantSendMessages(backend.claimsCommand.resources.lambda);
+(backend.claimsCommand.resources.lambda as LambdaFunction).addEnvironment('COMMUNICATION_QUEUE_URL', communicationQueue.queueUrl);
+
+const communicationApi = new HttpApi(stack, 'CommunicationWebhookApi', {
+  apiName: 'easyinsure-communication-webhooks',
+});
+communicationApi.addRoutes({
+  path: '/v1/inbound',
+  methods: [HttpMethod.POST],
+  integration: new HttpLambdaIntegration('CommunicationWebhookIntegration', backend.communicationWebhook.resources.lambda),
+});
+new Rule(stack, 'ClaimAssignmentSchedule', {
+  schedule: Schedule.rate(Duration.minutes(5)),
+  targets: [new LambdaTarget(backend.assignmentWorker.resources.lambda)],
+});
+backend.assignmentWorker.resources.lambda.addToRolePolicy(new PolicyStatement({
+  actions: ['cloudwatch:PutMetricData'], resources: ['*'],
+  conditions: { StringEquals: { 'cloudwatch:namespace': 'EasyInsure' } },
+}));
 
 const stage = (id: string, stageName: string) => new LambdaInvoke(stack, id, {
   lambdaFunction: backend.processClaim.resources.lambda,
@@ -128,6 +174,34 @@ new Alarm(stack, 'ClaimsDeadLetterMessages', {
   treatMissingData: TreatMissingData.NOT_BREACHING,
 });
 
+new Alarm(stack, 'CommunicationQueueAge', {
+  metric: communicationQueue.metricApproximateAgeOfOldestMessage({ period: Duration.minutes(5) }),
+  threshold: 300, evaluationPeriods: 1,
+  comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+  treatMissingData: TreatMissingData.NOT_BREACHING,
+});
+new Alarm(stack, 'CommunicationDeadLetterMessages', {
+  metric: communicationDlq.metricApproximateNumberOfMessagesVisible({ period: Duration.minutes(5) }),
+  threshold: 1, evaluationPeriods: 1,
+  comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+  treatMissingData: TreatMissingData.NOT_BREACHING,
+});
+new Alarm(stack, 'CommunicationWebhookErrors', {
+  metric: backend.communicationWebhook.resources.lambda.metricErrors({ period: Duration.minutes(5) }),
+  threshold: 1, evaluationPeriods: 1,
+  comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+  treatMissingData: TreatMissingData.NOT_BREACHING,
+});
+new Alarm(stack, 'ClaimAssignmentSlaBreaches', {
+  metric: new Metric({
+    namespace: 'EasyInsure', metricName: 'AssignmentSlaBreaches',
+    period: Duration.minutes(5), statistic: 'Maximum',
+  }),
+  threshold: 1, evaluationPeriods: 1,
+  comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+  treatMissingData: TreatMissingData.NOT_BREACHING,
+});
+
 const bucket = backend.storage.resources.bucket;
 const cfnBucket = bucket.node.defaultChild as CfnBucket;
 cfnBucket.versioningConfiguration = { status: 'Enabled' };
@@ -149,5 +223,7 @@ backend.addOutput({
     durableDataRegion: DATA_REGION,
     bedrockInferenceRegion: BEDROCK_REGION,
     claimsDeadLetterQueueUrl: claimsDlq.queueUrl,
+    communicationQueueUrl: communicationQueue.queueUrl,
+    communicationWebhookUrl: communicationApi.apiEndpoint,
   },
 });

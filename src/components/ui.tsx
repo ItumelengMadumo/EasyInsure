@@ -23,11 +23,11 @@ export function Status({ value }: { value: string }) {
 }
 
 export function ClaimTable({ claims, onSelect }: { claims: Claim[]; onSelect?: (claim: Claim) => void }) {
-  return <div className="table-wrap"><table><thead><tr><th>Claim</th><th>Type</th><th>Requested</th><th>Risk / Tier</th><th>Status</th><th /></tr></thead><tbody>
+  return <div className="table-wrap"><table><thead><tr><th>Claim</th><th>Type</th><th>Suggested payout</th><th>Risk / Tier</th><th>Status</th><th /></tr></thead><tbody>
     {claims.length ? claims.map((claim) => <tr key={claim.id}>
-      <td><strong>{claim.claimNumber}</strong><small>{shortDate(claim.incidentDate)}</small></td>
+      <td><strong>{claim.claimNumber ?? 'Draft'}</strong><small>{shortDate(claim.incidentDate)}</small></td>
       <td>{titleCase(claim.claimType)}</td>
-      <td>{money.format(claim.amountRequested)}</td>
+      <td>{claim.suggestedPayout != null ? money.format(claim.suggestedPayout) : 'Pending assessment'}</td>
       <td><strong>{claim.riskScore != null ? `${Math.round(claim.riskScore)}/100` : 'Pending'}</strong><small>Tier {claim.tier ?? '—'}</small></td>
       <td><Status value={claim.status} /></td>
       <td>{onSelect && <button className="text-button" onClick={() => onSelect(claim)}>Open →</button>}</td>

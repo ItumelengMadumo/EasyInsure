@@ -1,13 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Authenticator } from '@aws-amplify/ui-react';
+import { getCurrentUser } from 'aws-amplify/auth';
 import { AuthHeader } from './components/AuthHeader';
 import { Workspace } from './components/Workspace';
 import { LandingPage } from './pages/LandingPage';
 
-type Entry = 'landing' | 'signIn' | 'signUp';
+type Entry = 'checking' | 'landing' | 'signIn' | 'signUp' | 'authenticated';
 
 export default function App() {
-  const [entry, setEntry] = useState<Entry>('landing');
+  const [entry, setEntry] = useState<Entry>('checking');
+  useEffect(() => {
+    getCurrentUser().then(() => setEntry('authenticated')).catch(() => setEntry('landing'));
+  }, []);
+  if (entry === 'checking') return <div className="app-boot"><span>EI</span><p>Opening your secure workspace…</p></div>;
   if (entry === 'landing') return <LandingPage onLogin={() => setEntry('signIn')} onRegister={() => setEntry('signUp')} />;
   return <div className="auth-experience">
     <section className="auth-story">
@@ -19,7 +24,7 @@ export default function App() {
         <div className="auth-proof"><span>✓</span><div><strong>Auditable calculations</strong><small>Risk, premium and depreciation factors remain explainable.</small></div></div>
       </div>
     </section>
-    <section className="auth-form-shell"><Authenticator initialState={entry} loginMechanisms={['email']} signUpAttributes={['preferred_username']} components={{ Header: AuthHeader }}>
+    <section className="auth-form-shell"><Authenticator initialState={entry === 'signUp' ? 'signUp' : 'signIn'} loginMechanisms={['email']} signUpAttributes={['preferred_username']} components={{ Header: AuthHeader }}>
       {({ signOut }) => <Workspace signOut={() => { signOut?.(); setEntry('landing'); }} />}
     </Authenticator></section>
   </div>;

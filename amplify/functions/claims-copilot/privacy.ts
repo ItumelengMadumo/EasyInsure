@@ -23,7 +23,6 @@ export function buildInferencePayload(
       claimType: redactText(source.claimType, 120),
       description: redactText(source.description, MAX_DESCRIPTION_CHARS),
       incidentDate: source.incidentDate,
-      amountRequested: source.amountRequested,
       tier: source.tier,
     },
     deterministicOutputs,

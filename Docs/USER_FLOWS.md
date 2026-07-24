@@ -64,12 +64,13 @@ Future extension:
 ## Flow 3: Claim submission
 
 1. Member selects an asset already linked to an active policy.
-2. Member records incident type, date, location, description, and requested amount.
-3. Member optionally attaches supported evidence.
-4. The platform creates the claim once using an idempotency key.
-5. Evidence enters quarantine and scanning.
-6. The claim progresses through deterministic checks and AI-assisted summarisation.
-7. The member sees status changes and the human-review boundary.
+2. Member supplies the mandatory police case number and affidavit.
+3. Member records incident type, date, location, description, requested amount, and optional supporting evidence.
+4. The platform creates a resumable draft and quarantines its documents.
+5. Final submission creates one permanent EasyInsure claim number using idempotent commands.
+6. The platform assigns a lead advisor after receipt or exposes assignment as pending.
+7. Evidence scanning, deterministic checks, AI-assisted summarisation, and human review create chronological case activities.
+8. Portal and external-channel communication remains attached to the permanent case.
 
 ## Flow 4: Human claim decision
 
@@ -89,5 +90,5 @@ Future extension:
 - Never present a financial recommendation as a final decision.
 - Explain why a field is required when the reason is not obvious.
 - Prevent duplicate submissions and show clear recovery states.
-- Test every flow for client, junior, intermediate, senior, and superuser permissions.
+- Test every flow for client, junior, intermediate, senior, developer, and superuser permissions. Developers receive cross-case diagnostics but cannot perform case decisions or financial approvals.
 - Validate responsive behavior at mobile, tablet, laptop, and large desktop widths.

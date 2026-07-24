@@ -20,13 +20,13 @@ The application is not yet feature-complete against every item in the v2.0 speci
 | User profile | Partial | Profile view/edit and role display; 2FA and preference editing are not yet surfaced |
 | Assets | Implemented core | Register, list, search, policy-link visibility; edit/delete/bulk import remain |
 | Policies | Read experience | Policy, valuation, premium, term and linked-asset visibility; creation/renewal workflow remains |
-| Claims | Implemented core | Submission, evidence upload, status filtering, detail timeline |
+| Claims | Implemented | Mandatory police reference/affidavit drafts, permanent case number, assignment history, progress and detail |
 | Claim processing | Implemented | Step Functions workflow invokes deterministic engine and AI copilot |
 | Human review | Implemented core | Review queue and senior-only approve/reject actions |
 | Evidence | Implemented core | Quarantine upload, checksum metadata, scanning status and secure locker view |
 | Premium estimator | Implemented core | Interactive excess and deterministic engine query |
 | Audit | Backend implemented | Audit events exist; a dedicated superuser audit explorer remains |
-| Notifications | Missing | No notification model, delivery service, or notification centre yet |
+| Communications | Foundation implemented | Portal timeline, encrypted queue, provider adapters, delivery ledger and signed inbound normalization |
 | Reporting/SLA | Missing | No SLA timers, loss-ratio reporting, heatmap, or escalation UI |
 | Mobile/offline | Missing | API-first backend helps, but native clients and offline draft sync do not exist |
 

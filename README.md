@@ -128,6 +128,11 @@ Defined in `amplify/data/resource.ts` (AppSync/DynamoDB):
 | `Claim`           | Full claim lifecycle: status, tier, risk score, fraud flag, suggested/approved payout |
 | `ClaimDocument`   | Evidence file metadata + status (`QUARANTINED` → `CLEAN`/`REJECTED` → optionally `EXTRACTED`) |
 | `ClaimAnalysis`   | Stored deterministic + LLM output per claim (versioned)        |
+| `ClaimAssignment` | Historical lead/supporting case-team membership with identity snapshots |
+| `ClaimActivity`   | Append-only client-safe progress and event history              |
+| `ClaimCommunication` | Chronological portal/email/SMS/WhatsApp/phone case communication |
+| `CommunicationDelivery` | Per-provider delivery state, retry and failure history   |
+| `CallRecord`      | Call participants, consent, outcome and future transcript/audio keys |
 | `AuditEvent`      | Immutable record of who did what, when, with before/after values |
 | `ProcessingJob`   | Step Functions execution tracking (status, current step, retries) |
 
@@ -145,6 +150,7 @@ Cognito User Pool groups, enforced via AppSync `@auth` authorization rules on ev
 | `senior_officer`          | Approve/reject claims, assign officers, manage policies         |
 | `intermediate_officer`    | Read assigned claims/policies, request info, run the pipeline   |
 | `junior_officer`          | Read-only on claims/policies                                    |
+| `developer`               | Cross-case technical diagnostics; no financial approval rights  |
 | `client`                  | Own assets/policies/claims only                                 |
 
 Self-registration always lands new users in `client` — staff roles require manual promotion
@@ -247,6 +253,9 @@ staff group provisioning, monitoring, POPIA review, etc.).
 ---
 
 ## Security Considerations
+
+The policy-application, asset-detail and evidence-based payout architecture is documented in
+`Docs/ASSET_UNDERWRITING_ARCHITECTURE.md`.
 
 - Authentication via Cognito (User Pool + Identity Pool); no custom JWT/password handling
 - Authorization via AppSync `@auth` directives + Cognito group membership on every model —
