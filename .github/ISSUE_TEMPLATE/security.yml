@@ -1,0 +1,26 @@
+name: Security hardening
+description: Non-sensitive security improvement. Use a private advisory for vulnerabilities.
+title: "EI-####: "
+labels: ["type:security", "risk:high", "status:triage"]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include exploit details, credentials, customer data, or active vulnerabilities here.
+  - type: textarea
+    id: objective
+    attributes:
+      label: Hardening objective
+    validations:
+      required: true
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Trust and authorization boundary
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Security acceptance tests and rollback
+    validations:
+      required: true

@@ -1,0 +1,41 @@
+name: Publish production release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SemVer release version without the v prefix
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Verify and publish
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npx --yes npm@10.9.4 ci --cache .npm --prefer-offline
+      - run: npm run verify
+      - name: Validate version
+        shell: bash
+        run: |
+          [[ "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          ! git rev-parse "v${{ inputs.version }}" >/dev/null 2>&1
+      - name: Create tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag -a "v${{ inputs.version }}" -m "EasyInsure v${{ inputs.version }}"
+          git push origin "v${{ inputs.version }}"
+          gh release create "v${{ inputs.version }}" --generate-notes --verify-tag

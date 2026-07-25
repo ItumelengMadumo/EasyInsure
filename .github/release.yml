@@ -1,0 +1,15 @@
+changelog:
+  exclude:
+    labels:
+      - release:skip
+  categories:
+    - title: Security
+      labels: [type:security]
+    - title: Features
+      labels: [type:feature]
+    - title: Fixes
+      labels: [type:defect]
+    - title: Operations
+      labels: [type:operations]
+    - title: Other changes
+      labels: ["*"]

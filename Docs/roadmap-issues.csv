@@ -1,0 +1,134 @@
+id,title,priority,domain,branch
+EI-0001,GitHub CI verification,P0,delivery,feature/EI-0001-github-ci-verification
+EI-0002,Branch protection and CODEOWNERS,P0,delivery,feature/EI-0002-branch-protection-and-codeowners
+EI-0003,Amplify dev and Staging environments,P0,delivery,feature/EI-0003-amplify-dev-staging-environments
+EI-0004,Automatic Staging promotion,P0,delivery,feature/EI-0004-automatic-staging-promotion
+EI-0005,Production release gate,P0,delivery,feature/EI-0005-production-release-gate
+EI-0006,Persona seed data,P0,testing,feature/EI-0006-persona-seed-data
+EI-0007,End-to-end persona tests,P0,testing,feature/EI-0007-end-to-end-persona-tests
+EI-0008,Release version and environment banner,P0,delivery,feature/EI-0008-release-version-and-environment-banner
+EI-0101,Client dashboard,P0,workspace,feature/EI-0101-client-dashboard
+EI-0102,Junior officer dashboard,P0,workspace,feature/EI-0102-junior-officer-dashboard
+EI-0103,Intermediate advisor dashboard,P0,workspace,feature/EI-0103-intermediate-advisor-dashboard
+EI-0104,Senior control centre,P0,workspace,feature/EI-0104-senior-control-centre
+EI-0105,Developer diagnostics dashboard,P0,diagnostics,feature/EI-0105-developer-diagnostics-dashboard
+EI-0106,Superuser administration dashboard,P0,administration,feature/EI-0106-superuser-administration-dashboard
+EI-0107,Role-aware navigation and action visibility,P0,access,feature/EI-0107-role-aware-navigation-and-action-visibility
+EI-0108,Profile completion and identity consistency,P0,access,feature/EI-0108-profile-completion-and-identity-consistency
+EI-0201,My policy applications,P0,underwriting,feature/EI-0201-my-policy-applications
+EI-0202,Resume asset application,P0,underwriting,feature/EI-0202-resume-asset-application
+EI-0203,Application autosave and progress,P0,underwriting,feature/EI-0203-application-autosave-and-progress
+EI-0204,Application document locker,P0,documents,feature/EI-0204-application-document-locker
+EI-0205,Application withdrawal,P0,underwriting,feature/EI-0205-application-withdrawal
+EI-0206,Underwriting assignment queue,P0,underwriting,feature/EI-0206-underwriting-assignment-queue
+EI-0207,Structured underwriting review,P0,underwriting,feature/EI-0207-structured-underwriting-review
+EI-0208,Formal quote document,P0,policies,feature/EI-0208-formal-quote-document
+EI-0209,Quote expiry and acceptance,P0,policies,feature/EI-0209-quote-expiry-and-acceptance
+EI-0210,Policy schedule generation,P0,policies,feature/EI-0210-policy-schedule-generation
+EI-0301,Case task domain,P0,claims,feature/EI-0301-case-task-domain
+EI-0302,Advisor my-work queue,P0,claims,feature/EI-0302-advisor-my-work-queue
+EI-0303,Claim SLA countdown,P0,claims,feature/EI-0303-claim-sla-countdown
+EI-0304,Unread and follow-up indicators,P0,claims,feature/EI-0304-unread-and-follow-up-indicators
+EI-0305,Claim validation checklist,P0,claims,feature/EI-0305-claim-validation-checklist
+EI-0306,Structured case escalation,P0,claims,feature/EI-0306-structured-case-escalation
+EI-0307,Ready-for-decision checklist,P0,claims,feature/EI-0307-ready-for-decision-checklist
+EI-0308,Advisor workload capacity,P0,claims,feature/EI-0308-advisor-workload-capacity
+EI-0309,Bulk assignment and triage,P0,claims,feature/EI-0309-bulk-assignment-and-triage
+EI-0310,Case handoff and absence cover,P0,claims,feature/EI-0310-case-handoff-and-absence-cover
+EI-0401,Unassigned claims queue,P0,operations,feature/EI-0401-unassigned-claims-queue
+EI-0402,Overdue SLA queue,P0,operations,feature/EI-0402-overdue-sla-queue
+EI-0403,Failed communication queue,P0,operations,feature/EI-0403-failed-communication-queue
+EI-0404,Unmatched inbound queue,P0,operations,feature/EI-0404-unmatched-inbound-queue
+EI-0405,Structured decision reasons,P0,operations,feature/EI-0405-structured-decision-reasons
+EI-0406,Financial authority limits,P0,operations,feature/EI-0406-financial-authority-limits
+EI-0407,High-value dual approval,P0,operations,feature/EI-0407-high-value-dual-approval
+EI-0408,Advisor performance and capacity,P0,operations,feature/EI-0408-advisor-performance-and-capacity
+EI-0409,Audit event explorer,P0,audit,feature/EI-0409-audit-event-explorer
+EI-0501,Correlation ID search,P0,diagnostics,feature/EI-0501-correlation-id-search
+EI-0502,Processing job inspector,P0,diagnostics,feature/EI-0502-processing-job-inspector
+EI-0503,Document scan diagnostics,P0,diagnostics,feature/EI-0503-document-scan-diagnostics
+EI-0504,Communication delivery diagnostics,P0,diagnostics,feature/EI-0504-communication-delivery-diagnostics
+EI-0505,Webhook and reconciliation diagnostics,P0,diagnostics,feature/EI-0505-webhook-and-reconciliation-diagnostics
+EI-0506,Queue and alarm health,P0,diagnostics,feature/EI-0506-queue-and-alarm-health
+EI-0507,Sanitized error inspection,P0,diagnostics,feature/EI-0507-sanitized-error-inspection
+EI-0508,Audited job retry,P0,diagnostics,feature/EI-0508-audited-job-retry
+EI-0509,Audited message replay,P0,diagnostics,feature/EI-0509-audited-message-replay
+EI-0510,Frontend error reporting,P0,diagnostics,feature/EI-0510-frontend-error-reporting
+EI-0601,MFA enrolment,P0,access,feature/EI-0601-mfa-enrolment
+EI-0602,Session expiry recovery,P0,access,feature/EI-0602-session-expiry-recovery
+EI-0603,Suspended account experience,P0,access,feature/EI-0603-suspended-account-experience
+EI-0604,Access-denied and invalid-role pages,P0,access,feature/EI-0604-access-denied-and-invalid-role-pages
+EI-0605,Multi-group conflict resolution,P0,access,feature/EI-0605-multi-group-conflict-resolution
+EI-0606,Staff invitation and role assignment,P0,access,feature/EI-0606-staff-invitation-and-role-assignment
+EI-0607,Role history and access review,P0,access,feature/EI-0607-role-history-and-access-review
+EI-1001,Policy endorsements,P1,policies,feature/EI-1001-policy-endorsements
+EI-1002,Policy renewal,P1,policies,feature/EI-1002-policy-renewal
+EI-1003,Policy cancellation,P1,policies,feature/EI-1003-policy-cancellation
+EI-1004,Policy reinstatement,P1,policies,feature/EI-1004-policy-reinstatement
+EI-1005,Cover limit and excess changes,P1,policies,feature/EI-1005-cover-limit-and-excess-changes
+EI-1006,Additional drivers and users,P1,policies,feature/EI-1006-additional-drivers-and-users
+EI-1007,Billing account,P1,billing,feature/EI-1007-billing-account
+EI-1008,Debit order mandate,P1,billing,feature/EI-1008-debit-order-mandate
+EI-1009,Payment status and arrears,P1,billing,feature/EI-1009-payment-status-and-arrears
+EI-1010,Refunds and failed payments,P1,billing,feature/EI-1010-refunds-and-failed-payments
+EI-1011,Cover period claim validation,P1,claims,feature/EI-1011-cover-period-claim-validation
+EI-1101,Service provider directory,P1,suppliers,feature/EI-1101-service-provider-directory
+EI-1102,Assessor appointments,P1,suppliers,feature/EI-1102-assessor-appointments
+EI-1103,Repairer and towing instructions,P1,suppliers,feature/EI-1103-repairer-and-towing-instructions
+EI-1104,Supplier estimates and invoices,P1,suppliers,feature/EI-1104-supplier-estimates-and-invoices
+EI-1105,Incident-specific evidence,P1,claims,feature/EI-1105-incident-specific-evidence
+EI-1106,Claim complaints,P1,claims,feature/EI-1106-claim-complaints
+EI-1107,Claim appeals,P1,claims,feature/EI-1107-claim-appeals
+EI-1108,Reopen closed claim,P1,claims,feature/EI-1108-reopen-closed-claim
+EI-1109,Salvage and recovery,P1,claims,feature/EI-1109-salvage-and-recovery
+EI-1110,Subrogation,P1,claims,feature/EI-1110-subrogation
+EI-1201,Live email adapter,P1,communications,feature/EI-1201-live-email-adapter
+EI-1202,Live SMS adapter,P1,communications,feature/EI-1202-live-sms-adapter
+EI-1203,Live WhatsApp adapter,P1,communications,feature/EI-1203-live-whatsapp-adapter
+EI-1204,Notification preferences,P1,communications,feature/EI-1204-notification-preferences
+EI-1205,Message templates,P1,communications,feature/EI-1205-message-templates
+EI-1206,Unread and conversation assignment,P1,communications,feature/EI-1206-unread-and-conversation-assignment
+EI-1207,Inbound reconciliation UI,P1,communications,feature/EI-1207-inbound-message-reconciliation-ui
+EI-1208,Call consent and recording,P1,communications,feature/EI-1208-call-consent-and-recording
+EI-1209,Transcript review,P1,communications,feature/EI-1209-transcript-review
+EI-1210,Unified document locker,P1,documents,feature/EI-1210-unified-document-locker
+EI-1211,Document versioning and expiry,P1,documents,feature/EI-1211-document-versioning-and-expiry
+EI-1212,Document preview and download,P1,documents,feature/EI-1212-document-preview-and-download
+EI-1213,Legal hold,P1,compliance,feature/EI-1213-legal-hold
+EI-1301,Global platform search,P1,search,feature/EI-1301-global-platform-search
+EI-1302,Server-side pagination,P1,search,feature/EI-1302-server-side-pagination
+EI-1303,Saved filters and views,P1,search,feature/EI-1303-saved-filters-and-views
+EI-1304,Recent items,P1,search,feature/EI-1304-recent-items
+EI-1305,Bulk actions,P1,search,feature/EI-1305-bulk-actions
+EI-1306,Secure data exports,P1,search,feature/EI-1306-secure-data-exports
+EI-2001,Staff account lifecycle,P2,administration,feature/EI-2001-staff-account-lifecycle
+EI-2002,Team branch and region hierarchy,P2,administration,feature/EI-2002-team-branch-region-hierarchy
+EI-2003,Temporary delegation,P2,administration,feature/EI-2003-temporary-delegation
+EI-2004,SLA policy administration,P2,administration,feature/EI-2004-sla-policy-administration
+EI-2005,Provider configuration,P2,administration,feature/EI-2005-provider-configuration
+EI-2006,Template administration,P2,administration,feature/EI-2006-template-administration
+EI-2007,Retention policy administration,P2,administration,feature/EI-2007-retention-policy-administration
+EI-2008,Feature flags,P2,administration,feature/EI-2008-feature-flags
+EI-2009,Formula version administration,P2,administration,feature/EI-2009-formula-version-administration
+EI-2010,Configuration audit history,P2,audit,feature/EI-2010-configuration-audit-history
+EI-2101,Claim turnaround reporting,P2,reporting,feature/EI-2101-claim-turnaround-reporting
+EI-2102,SLA reporting,P2,reporting,feature/EI-2102-sla-reporting
+EI-2103,Payout variance reporting,P2,reporting,feature/EI-2103-payout-variance-reporting
+EI-2104,Loss ratio reporting,P2,reporting,feature/EI-2104-loss-ratio-reporting
+EI-2105,Fraud trend reporting,P2,reporting,feature/EI-2105-fraud-trend-reporting
+EI-2106,Application conversion reporting,P2,reporting,feature/EI-2106-application-conversion-reporting
+EI-2107,POPIA consent register,P2,compliance,feature/EI-2107-popia-consent-register
+EI-2108,Data access export,P2,compliance,feature/EI-2108-data-access-export
+EI-2109,Data correction workflow,P2,compliance,feature/EI-2109-data-correction-workflow
+EI-2110,Retention and deletion tracking,P2,compliance,feature/EI-2110-retention-and-deletion-tracking
+EI-2111,Compliance audit export,P2,compliance,feature/EI-2111-compliance-audit-export
+EI-2201,Synthetic user journeys,P2,reliability,feature/EI-2201-synthetic-user-journeys
+EI-2202,Distributed tracing,P2,reliability,feature/EI-2202-distributed-tracing
+EI-2203,Dependency health checks,P2,reliability,feature/EI-2203-dependency-health-checks
+EI-2204,Incident management and runbooks,P2,reliability,feature/EI-2204-incident-management-and-runbooks
+EI-2205,Deployment rollback visibility,P2,reliability,feature/EI-2205-deployment-rollback-visibility
+EI-2206,GraphQL contract tests,P2,testing,feature/EI-2206-graphql-contract-tests
+EI-2207,Authorization matrix tests,P2,testing,feature/EI-2207-authorization-matrix-tests
+EI-2208,Frontend code splitting,P2,reliability,feature/EI-2208-frontend-code-splitting
+EI-2209,WCAG accessibility remediation,P2,accessibility,feature/EI-2209-wcag-accessibility-remediation
+EI-2210,Responsive workflow testing,P2,accessibility,feature/EI-2210-responsive-workflow-testing

@@ -1,0 +1,43 @@
+name: Promote dev to Staging
+
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [dev]
+    types: [completed]
+
+concurrency:
+  group: dev-to-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  promote:
+    name: Open and merge promotion
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+      - name: Fetch promotion branches
+        run: |
+          git fetch origin Staging dev
+      - name: Create or reuse promotion pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          number="$(gh pr list --base Staging --head dev --state open --json number --jq '.[0].number')"
+          if [ -z "$number" ]; then
+            gh pr create \
+              --base Staging \
+              --head dev \
+              --title "Promote dev to Staging" \
+              --body "Automated promotion after the required dev CI checks passed."
+            number="$(gh pr list --base Staging --head dev --state open --json number --jq '.[0].number')"
+          fi
+          gh pr merge "$number" --merge --auto

@@ -1,0 +1,30 @@
+name: Operational change
+description: Infrastructure, provider, monitoring, migration, or release work.
+title: "EI-####: "
+labels: ["type:operations", "status:ready"]
+body:
+  - type: textarea
+    id: change
+    attributes:
+      label: Change and business reason
+    validations:
+      required: true
+  - type: textarea
+    id: environments
+    attributes:
+      label: Environment sequence
+      value: "dev → Staging → main"
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation, monitoring, and rollback
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security, credentials, and approval impact
+    validations:
+      required: true

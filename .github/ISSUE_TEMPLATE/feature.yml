@@ -1,0 +1,38 @@
+name: EasyInsure feature
+description: One user-facing capability mapped to one EI ticket and branch.
+title: "EI-####: "
+labels: ["type:feature", "status:ready"]
+body:
+  - type: input
+    id: persona
+    attributes:
+      label: Persona
+      placeholder: client, junior, intermediate, senior, developer, or superuser
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and desired outcome
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: Use a checklist with observable behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: auth
+    attributes:
+      label: Authorization and privacy
+      description: State both permitted and forbidden roles and any PII impact.
+    validations:
+      required: true
+  - type: textarea
+    id: delivery
+    attributes:
+      label: Data, migration, monitoring, and rollback
+    validations:
+      required: true

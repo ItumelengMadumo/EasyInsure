@@ -1,0 +1,52 @@
+name: Staging acceptance
+
+on:
+  push:
+    branches: [Staging]
+  workflow_dispatch:
+
+concurrency:
+  group: staging-acceptance
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: Release candidate acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: Staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npx --yes npm@10.9.4 ci --cache .npm --prefer-offline
+      - run: npm run verify
+      - name: Confirm authorization persona contract
+        run: npm test -- --reporter=verbose
+      - name: Public Staging smoke check
+        if: vars.STAGING_URL != ''
+        shell: bash
+        run: curl --fail --show-error --silent --retry 4 --retry-delay 10 "${{ vars.STAGING_URL }}" > /dev/null
+      - name: Write release candidate report
+        shell: bash
+        run: |
+          {
+            echo "# Staging release candidate"
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Verification: passed"
+            echo "- Authorization contract: passed"
+            echo "- Authenticated persona E2E: tracked by EI-0007"
+          } | tee staging-acceptance.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staging-acceptance-${{ github.sha }}
+          path: staging-acceptance.md
+          retention-days: 30

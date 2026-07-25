@@ -1,0 +1,36 @@
+name: Synchronize main to dev
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    name: Open synchronization PR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Open PR when main contains commits absent from dev
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          git fetch origin dev main
+          if git merge-base --is-ancestor origin/main origin/dev; then
+            echo "dev already contains main"
+            exit 0
+          fi
+          existing="$(gh pr list --base dev --head main --state open --json number --jq '.[0].number')"
+          if [ -z "$existing" ]; then
+            gh pr create \
+              --base dev \
+              --head main \
+              --title "Synchronize production changes back to dev" \
+              --body "Required synchronization after a production release or hotfix. This PR must pass CI before merge."
+          fi

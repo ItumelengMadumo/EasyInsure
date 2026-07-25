@@ -211,6 +211,13 @@ list insured items), **Claims** (submit with evidence upload, list), and **Revie
 
 ---
 
+## Delivery and roadmap
+
+All changes follow `feature/EI-ticket → dev → Staging → main`. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md), [`Docs/DELIVERY_PIPELINE.md`](Docs/DELIVERY_PIPELINE.md), and
+[`Docs/PLATFORM_ROADMAP.md`](Docs/PLATFORM_ROADMAP.md). Direct changes to permanent branches are
+not part of the supported workflow.
+
 ## Setup & Running
 
 ### Prerequisites
