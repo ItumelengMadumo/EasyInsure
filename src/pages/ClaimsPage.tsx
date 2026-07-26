@@ -193,7 +193,7 @@ function CaseDrawer({ claim, portfolio, isStaff, canOperate, isSenior, onClose, 
   }
   async function assess(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
-    const result = await client.mutations.createClaimAssessment({
+    const result = await client.mutations.calculateClaimPayoutAssessment({
       claimId: claim.id, evidenceReviewed: documents.filter((item) => item.status === 'CLEAN').map((item) => item.id),
       coveredLossValue: Number(form.get('coveredLossValue')), repairEstimate: form.get('repairEstimate') ? Number(form.get('repairEstimate')) : undefined,
       replacementEstimate: form.get('replacementEstimate') ? Number(form.get('replacementEstimate')) : undefined,
@@ -204,7 +204,7 @@ function CaseDrawer({ claim, portfolio, isStaff, canOperate, isSenior, onClose, 
     if (result.errors?.length) notify(result.errors[0].message); else { notify(`Assessment saved with a ${money.format(result.data.recommendedPayout)} recommendation.`); event.currentTarget.reset(); await refresh(); }
   }
   async function finalizeAssessment(id: string) {
-    const result = await client.mutations.finalizeClaimAssessment({ assessmentId: id, idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() });
+    const result = await client.mutations.finalizeClaimPayoutAssessment({ assessmentId: id, idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() });
     if (result.errors?.length) notify(result.errors[0].message); else { notify('Assessment finalized for senior payout decision.'); await refresh(); }
   }
   const nextAction = claim.status === 'VALIDATING' ? ['START', 'Start assessment']
