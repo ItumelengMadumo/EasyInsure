@@ -609,7 +609,7 @@ export const handler = async (event: ResolverEvent) => {
     return result.data;
   }
 
-  if (event.fieldName === 'createClaimAssessment') {
+  if (event.fieldName === 'calculateClaimPayoutAssessment') {
     requireCaseOfficer(actor);
     const assessmentClaim = await getClaim(String(args.claimId));
     if (!(await canAccessClaim(actor, assessmentClaim))) throw new Error('Claim assignment access required');
@@ -645,7 +645,7 @@ export const handler = async (event: ResolverEvent) => {
     return result.data;
   }
 
-  if (event.fieldName === 'finalizeClaimAssessment') {
+  if (event.fieldName === 'finalizeClaimPayoutAssessment') {
     requireSenior(actor);
     const assessment = await client.models.ClaimAssessment.get({ id: String(args.assessmentId) });
     if (!assessment.data) throw new Error('Assessment not found');

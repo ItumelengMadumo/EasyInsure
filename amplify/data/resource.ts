@@ -528,13 +528,13 @@ const schema = a.schema({
     outcome: a.string().required(), advisorNotes: a.string(), transcriptKey: a.string(), recordingKey: a.string(),
     idempotencyKey: a.string().required(), correlationId: a.string().required(),
   }).returns(a.ref('CallRecord')).authorization((allow) => [allow.groups(staff)]).handler(a.handler.function(claimsCommand)),
-  createClaimAssessment: a.mutation().arguments({
+  calculateClaimPayoutAssessment: a.mutation().arguments({
     claimId: a.id().required(), evidenceReviewed: a.string().array().required(), coveredLossValue: a.float().required(),
     repairEstimate: a.float(), replacementEstimate: a.float(), policyLimit: a.float().required(), excess: a.float().required(),
     depreciation: a.float().required(), exclusions: a.string().array().required(),
     idempotencyKey: a.string().required(), correlationId: a.string().required(),
   }).returns(a.ref('ClaimAssessment')).authorization((allow) => [allow.groups(staff)]).handler(a.handler.function(claimsCommand)),
-  finalizeClaimAssessment: a.mutation().arguments({
+  finalizeClaimPayoutAssessment: a.mutation().arguments({
     assessmentId: a.id().required(), overridePayout: a.float(), overrideReason: a.string(),
     idempotencyKey: a.string().required(), correlationId: a.string().required(),
   }).returns(a.ref('ClaimAssessment')).authorization((allow) => [allow.groups(senior)]).handler(a.handler.function(claimsCommand)),
