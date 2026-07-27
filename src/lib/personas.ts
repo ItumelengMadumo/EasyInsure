@@ -1,4 +1,4 @@
-import type { BusinessRole, Page, Portfolio } from '../types';
+import type { BusinessRole, Page, PersonaCapabilities, Portfolio, SimulationScenarioId } from '../types';
 
 export type PersonaDefinition = {
   role: BusinessRole;
@@ -85,6 +85,47 @@ export const personas: PersonaDefinition[] = [
 ];
 
 export const personaByRole = (role: BusinessRole) => personas.find((persona) => persona.role === role)!;
+export const personaOwner = (role: BusinessRole) =>
+  role === 'junior_officer' ? 'persona-junior' : role === 'intermediate_officer' ? 'persona-advisor' : `persona-${role}`;
+
+export const capabilitiesFor = (role: BusinessRole): PersonaCapabilities => {
+  const persona = personaByRole(role);
+  const senior = ['senior_officer', 'superuser'].includes(role);
+  const staff = role.includes('officer') || ['developer', 'superuser'].includes(role);
+  return {
+    visiblePages: persona.navigation,
+    isClient: role === 'client',
+    isStaff: staff,
+    canOperateClaims: staff && role !== 'developer',
+    canAssessClaims: ['intermediate_officer', 'senior_officer', 'superuser'].includes(role),
+    canReviewUnderwriting: senior,
+    canDecideClaims: senior,
+    canViewAllClaims: senior || role === 'developer',
+    canViewInternalRecords: staff,
+  };
+};
+
+export const scenarioCatalogue: Array<{ id: SimulationScenarioId; label: string; page: Page; description: string }> = [
+  { id: 'golden-journey', label: 'Golden journey', page: 'overview', description: 'All major workflow states in one portfolio.' },
+  { id: 'empty-client', label: 'New client / empty', page: 'overview', description: 'No assets, cover or claims.' },
+  { id: 'asset-application', label: 'Asset application draft', page: 'assets', description: 'Partially completed asset application.' },
+  { id: 'underwriting-info', label: 'Underwriting info needed', page: 'policies', description: 'Evidence or declarations require an update.' },
+  { id: 'quote-acceptance', label: 'Quote awaiting acceptance', page: 'policies', description: 'Formal quote ready for the client.' },
+  { id: 'active-cover', label: 'Active cover', page: 'policies', description: 'Policies and linked assets.' },
+  { id: 'claim-draft', label: 'Claim draft', page: 'claims', description: 'Claim not yet submitted.' },
+  { id: 'claim-unassigned', label: 'Unassigned claim', page: 'claims', description: 'Submitted case awaiting a lead advisor.' },
+  { id: 'affidavit-scan', label: 'Affidavit scan', page: 'claims', description: 'Mandatory evidence awaiting scan.' },
+  { id: 'junior-validation', label: 'Junior validation', page: 'claims', description: 'Assigned validation work.' },
+  { id: 'information-loop', label: 'Information requested', page: 'claims', description: 'Client response is required.' },
+  { id: 'claim-assessment', label: 'Claim assessment', page: 'claims', description: 'Evidence and payout recommendation work.' },
+  { id: 'senior-decision', label: 'Senior decision', page: 'review', description: 'Recommendation awaiting human decision.' },
+  { id: 'failed-communication', label: 'Failed communication', page: 'claims', description: 'External adapter delivery failure.' },
+  { id: 'payment-pending', label: 'Payment pending', page: 'claims', description: 'Approved claim awaiting payment.' },
+  { id: 'closed-claim', label: 'Closed historical claim', page: 'claims', description: 'Permanent read-only case record.' },
+  { id: 'suspended-account', label: 'Suspended account', page: 'profile', description: 'Account state requiring support.' },
+  { id: 'access-denied', label: 'Access denied', page: 'overview', description: 'No operational records exposed.' },
+  { id: 'role-conflict', label: 'Role conflict', page: 'profile', description: 'Profile and effective role mismatch diagnostics.' },
+];
 
 const now = '2026-07-27T08:30:00.000Z';
 const asset = (id: string, type: string, description: string, price: number, policyId?: string) => ({
@@ -107,7 +148,7 @@ export function createPersonaPortfolio(role: BusinessRole): Portfolio {
   const isClient = role === 'client';
   const visibleClaims = isClient || ['senior_officer', 'developer', 'superuser'].includes(role)
     ? claims : role === 'junior_officer' ? claims.slice(1, 2) : claims.slice(2, 4);
-  const profiles = personas.map((item) => ({ id: `profile-${item.role}`, owner: `persona-${item.role}`, email: item.testEmail, displayName: item.name, businessRole: item.role, status: 'ACTIVE' }));
+  const profiles = personas.map((item) => ({ id: `profile-${item.role}`, owner: personaOwner(item.role), email: item.testEmail, displayName: item.name, businessRole: item.role, status: 'ACTIVE' }));
   return {
     assets: [asset('asset-car', 'VEHICLE', '2024 Toyota Corolla Cross XR', 482000, 'policy-car'), asset('asset-home', 'PROPERTY', 'Primary residence, Midrand', 2150000, 'policy-home'), asset('asset-laptop', 'ELECTRONICS', 'Workstation laptop', 46000)],
     policies: [
@@ -131,6 +172,42 @@ export function createPersonaPortfolio(role: BusinessRole): Portfolio {
     claimAssessments: ['senior_officer', 'intermediate_officer', 'developer', 'superuser'].includes(role) ? [{ id: 'assessment-claim-decision', claimId: 'claim-decision', version: 1, evidenceReviewed: ['Roof inspection', 'Contractor estimate'], coveredLossValue: 70000, repairEstimate: 70000, policyLimit: 1500000, excess: 3500, depreciation: 2300, exclusions: [], recommendedPayout: 64200, status: 'PENDING_APPROVAL' }] : [],
     profiles, profile: profiles.find((profile) => profile.businessRole === persona.role) ?? null,
   };
+}
+
+export function createScenarioPortfolio(role: BusinessRole, scenario: SimulationScenarioId): Portfolio {
+  const portfolio = createPersonaPortfolio(role);
+  const keepClaim = (claimId: string) => {
+    portfolio.claims = portfolio.claims.filter((item) => item.id === claimId);
+    portfolio.documents = portfolio.documents.filter((item) => item.claimId === claimId);
+    portfolio.assignments = portfolio.assignments.filter((item) => item.claimId === claimId);
+    portfolio.activities = portfolio.activities.filter((item) => item.claimId === claimId);
+    portfolio.communications = portfolio.communications.filter((item) => item.claimId === claimId);
+    portfolio.internalNotes = portfolio.internalNotes.filter((item) => item.claimId === claimId);
+    portfolio.claimAssessments = portfolio.claimAssessments.filter((item) => item.claimId === claimId);
+  };
+  if (scenario === 'golden-journey') return portfolio;
+  if (scenario === 'empty-client' || scenario === 'access-denied') {
+    return { ...portfolio, assets: [], policies: [], applications: [], premiumAssessments: [], claims: [], documents: [], assignments: [], activities: [], communications: [], internalNotes: [], claimAssessments: [] };
+  }
+  if (scenario === 'asset-application') return { ...portfolio, assets: portfolio.assets.filter((item) => item.id === 'asset-laptop'), policies: [], applications: portfolio.applications.filter((item) => item.id === 'app-draft'), premiumAssessments: [], claims: [], documents: [], assignments: [], activities: [], communications: [], internalNotes: [], claimAssessments: [] };
+  if (scenario === 'underwriting-info') { portfolio.applications = portfolio.applications.filter((item) => item.id === 'app-info'); portfolio.policies = []; return portfolio; }
+  if (scenario === 'quote-acceptance') { portfolio.applications = portfolio.applications.filter((item) => item.id === 'app-info'); portfolio.applications[0].status = 'QUOTED'; portfolio.policies = []; return portfolio; }
+  if (scenario === 'active-cover') return { ...portfolio, applications: [], premiumAssessments: [], claims: [], documents: [], assignments: [], activities: [], communications: [], internalNotes: [], claimAssessments: [] };
+  if (scenario === 'claim-draft') {
+    keepClaim('claim-validation'); const item = portfolio.claims[0]; item.status = 'DRAFT'; item.currentMilestone = 'DRAFT'; item.claimNumber = null; item.submittedAt = null; portfolio.activities = []; return portfolio;
+  }
+  const claimByScenario: Partial<Record<SimulationScenarioId, string>> = {
+    'claim-unassigned': 'claim-unassigned', 'affidavit-scan': 'claim-validation', 'junior-validation': 'claim-validation',
+    'information-loop': 'claim-assessment', 'claim-assessment': 'claim-assessment', 'senior-decision': 'claim-decision',
+    'failed-communication': 'claim-decision', 'payment-pending': 'claim-decision', 'closed-claim': 'claim-closed',
+  };
+  const selectedClaim = claimByScenario[scenario];
+  if (selectedClaim) keepClaim(selectedClaim);
+  if (scenario === 'information-loop' && portfolio.claims[0]) { portfolio.claims[0].status = 'INFO_NEEDED'; portfolio.claims[0].currentMilestone = 'INFO_NEEDED'; }
+  if (scenario === 'payment-pending' && portfolio.claims[0]) { portfolio.claims[0].status = 'PAYMENT_PENDING'; portfolio.claims[0].currentMilestone = 'PAYMENT_PENDING'; portfolio.claims[0].approvedPayout = portfolio.claims[0].suggestedPayout; }
+  if (scenario === 'suspended-account' && portfolio.profile) portfolio.profile.status = 'SUSPENDED';
+  if (scenario === 'role-conflict' && portfolio.profile) portfolio.profile.businessRole = role === 'client' ? 'junior_officer' : 'client';
+  return portfolio;
 }
 
 export function resolveRole(groups: string[], profileRole?: string | null) {

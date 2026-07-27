@@ -1,15 +1,15 @@
 import { ClaimTable, Metric, PageHeader } from '../components/ui';
 import { money } from '../lib/format';
-import type { Page, Portfolio } from '../types';
+import type { Page, PersonaCapabilities, Portfolio } from '../types';
 
-export function OverviewPage({ portfolio, go, displayName }: { portfolio: Portfolio; go: (page: Page) => void; displayName: string }) {
+export function OverviewPage({ portfolio, go, displayName, capabilities }: { portfolio: Portfolio; go: (page: Page) => void; displayName: string; capabilities: PersonaCapabilities }) {
   const pending = portfolio.claims.filter((claim) => !['CLOSED', 'PAID', 'REJECTED'].includes(claim.status)).length;
   const activePolicies = portfolio.policies.filter((policy) => policy.status.toLowerCase() === 'active').length;
   const protectedValue = portfolio.assets.reduce((sum, asset) => sum + asset.purchasePrice, 0);
   const flagged = portfolio.claims.filter((claim) => claim.fraudFlag).length;
   const firstName = displayName.split(/[\s@]/)[0];
   return <>
-    <PageHeader eyebrow="Operations overview" title={`Good day, ${firstName}.`} description="Your cover, claims and operational decisions in one explainable workspace." action={<button className="primary" onClick={() => go('claims')}>＋ Start a claim</button>} />
+    <PageHeader eyebrow="Operations overview" title={`Good day, ${firstName}.`} description="Your cover, claims and operational decisions in one explainable workspace." action={<button className="primary" onClick={() => go('claims')}>{capabilities.isClient ? '＋ Start a claim' : capabilities.isStaff ? 'Open work queue →' : 'View claims →'}</button>} />
     <section className="metrics">
       <Metric value={money.format(protectedValue)} label="Protected asset value" detail={`${portfolio.assets.length} registered assets`} />
       <Metric value={activePolicies} label="Active policies" detail={`${portfolio.policies.length} total policies`} />

@@ -1,23 +1,47 @@
-# Persona Lab
+# Developer View As Simulator
 
-Persona Lab is a development-only workflow-audit surface for developers and superusers. It renders the real EasyInsure pages with deterministic synthetic portfolios; it is not impersonation and does not validate Cognito authorization.
+The simulator lets a real EasyInsure developer see and exercise every role’s frontend workflow without impersonation or backend business authority.
 
 ## Enable and open
 
-Set `VITE_APP_ENV=dev` on the Amplify `dev` branch. Local Vite development enables the lab automatically. Sign in as a user whose single Cognito business group and profile role are `developer` or `superuser`, then choose **Persona Lab** in the navigation.
+Set `VITE_APP_ENV=dev` on the Amplify `dev` branch. Local Vite development enables it automatically. Sign in with an account whose single Cognito business group and profile role are both `developer`.
 
-Staging and production must not set `VITE_APP_ENV=dev`.
+The header then displays a persistent **View as** toolbar. Select a persona and scenario from any page, or open **Persona Lab** for role summaries, guided checklists and real-account details.
 
-## Preview versus real accounts
+Staging and production must not set `VITE_APP_ENV=dev`. Superusers do not receive the simulator.
 
-- **Preview workspace** is for inspecting navigation, language, empty/error expectations, timelines and workflow clarity. Its fixture adapter rejects model writes and custom mutations, and form submissions are stopped before uploads.
-- **Real account testing** is for authorization. Open a private browser window, sign in with the development account shown in the lab, and retrieve its password from the approved development secret store. Never add passwords to source control or browser code.
+## How simulation works
 
-The Golden Journey includes draft and information-needed applications, active cover, unassigned/validating/assessment/decision/closed claims, assignment history, evidence, internal notes and a failed mock email.
+- The signed-in developer identity remains visible beside the simulated identity.
+- Real page components render against a deterministic portfolio.
+- Page commands are routed to the local simulation adapter instead of Amplify.
+- Simulated file uploads create metadata only; file bytes never leave the browser.
+- Claims, applications, communications, assignments, assessments and decisions update in memory.
+- **Reset** restores the selected scenario. **Return to developer** restores the live developer workspace.
+- Browser refresh reconstructs the selected scenario from `viewAs` and `scenario` URL parameters and discards local actions.
+
+Example:
+
+```text
+?page=claims&viewAs=intermediate_officer&scenario=claim-assessment
+```
+
+Preview parameters are ignored unless the authenticated and profile roles both resolve to developer in an enabled development environment.
+
+## Scenario catalogue
+
+The catalogue covers empty onboarding, asset applications, underwriting information requests, quote acceptance, active cover, claim drafts, unassigned claims, affidavit scanning, junior validation, information loops, assessment, senior decision, delivery failure, payment, closed cases, suspended accounts, access denied and identity conflict.
+
+## Simulation versus authorization testing
+
+- **Simulate workflow** validates navigation, controls, content, state progression and workflow clarity.
+- **Test real authorization** validates Cognito and backend rules using a separate private-browser login.
+
+Simulation never proves backend authorization. Developer simulation of a senior view still executes only the local adapter.
 
 ### Create or reconcile real development accounts
 
-Use AWS credentials that can administer only the development user pool and the designated development secret:
+Use AWS credentials limited to the development user pool and designated secret:
 
 ```powershell
 $env:EASYINSURE_ENV = 'dev'
@@ -26,21 +50,17 @@ $env:EASYINSURE_PERSONA_SECRET_ID = 'easyinsure/dev/persona-credentials'
 npm run personas:seed:dev
 ```
 
-The command is idempotent for user and group membership. It rotates every persona password on each run and writes the new values directly to AWS Secrets Manager. First login creates the persona's platform profile through the normal application command. Golden Journey business records remain isolated fixtures in preview mode; real accounts are intended for authorization and for manually exercising live dev mutations.
+The command reconciles six users and their single group memberships, rotates passwords and writes credentials directly to AWS Secrets Manager.
 
 ## Refresh Amplify outputs
-
-The repository ignores environment-specific `amplify_outputs.json`. To obtain current development outputs:
 
 ```powershell
 $env:AMPLIFY_APP_ID = '<development app id>'
 npm run outputs:dev
 ```
 
-Do not copy sandbox or development outputs into Staging or production.
+Environment-specific Amplify outputs remain ignored by Git and must not be copied between environments.
 
-## Review method
+## Reporting a workflow mismatch
 
-Select each persona, start its preview, and work through the checklist. Checklist completion is stored only in the browser session. Record workflow mismatches with the persona, page, expected result, actual result, screenshot and whether it occurred in preview or a real Cognito session.
-
-To reset synthetic preview data, exit and reopen the preview. Preview records never coexist with live backend records and cannot delete development data.
+Record the persona, scenario, page, expected result, actual result, URL and screenshot. State whether the issue occurred in local simulation or a real Cognito session.

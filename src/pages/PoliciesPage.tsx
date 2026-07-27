@@ -2,11 +2,11 @@ import { FormEvent } from 'react';
 import { EmptyState, PageHeader, Status } from '../components/ui';
 import { client } from '../lib/data';
 import { money, shortDate, titleCase } from '../lib/format';
-import type { Portfolio, PolicyApplication } from '../types';
+import type { PersonaCapabilities, Portfolio, PolicyApplication } from '../types';
 
-type Props = { portfolio: Portfolio; groups: string[]; refresh: () => Promise<void>; notify: (message: string) => void };
-export function PoliciesPage({ portfolio, groups, refresh, notify }: Props) {
-  const senior = groups.some((group) => ['senior_officer', 'superuser'].includes(group));
+type Props = { portfolio: Portfolio; capabilities: PersonaCapabilities; refresh: () => Promise<void>; notify: (message: string) => void };
+export function PoliciesPage({ portfolio, capabilities, refresh, notify }: Props) {
+  const senior = capabilities.canReviewUnderwriting;
   async function review(application: PolicyApplication, decision: string) {
     const reason = decision === 'DECLINED' ? window.prompt('Record the decline reason') : undefined;
     if (decision === 'DECLINED' && !reason) return;
@@ -22,6 +22,7 @@ export function PoliciesPage({ portfolio, groups, refresh, notify }: Props) {
     if (result.errors?.length) notify(result.errors[0].message); else { notify('Formal quote issued to the client.'); await refresh(); }
   }
   async function accept(application: PolicyApplication) {
+    if (!capabilities.isClient) return notify('Only the client can accept a formal quote.');
     const result = await client.mutations.acceptPolicyQuote({ applicationId: application.id, idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() });
     if (result.errors?.length) notify(result.errors[0].message); else { notify('Quote accepted. The policy is now active.'); await refresh(); }
   }
@@ -31,7 +32,16 @@ export function PoliciesPage({ portfolio, groups, refresh, notify }: Props) {
     <section className="application-list">{portfolio.applications.map((application) => {
       const assessment = portfolio.premiumAssessments.find((item) => item.id === application.latestAssessmentId);
       const asset = portfolio.assets.find((item) => item.id === application.assetId);
-      return <article className="panel application-card" key={application.id}><div><span className="eyebrow">{application.applicationNumber ?? 'Draft application'}</span><h2>{asset?.description ?? titleCase(application.assetType)}</h2><Status value={application.status} /></div><p>{assessment ? `Indicative range ${money.format(assessment.rangeLow)}–${money.format(assessment.rangeHigh)} per month. This is not active cover.` : 'The indicative assessment is still pending.'}</p>{application.missingInformation.length > 0 && <small>Missing: {application.missingInformation.join(', ')}</small>}<div className="application-actions">{senior && ['SUBMITTED', 'MORE_INFO_REQUIRED'].includes(application.status) && <><button className="secondary" onClick={() => review(application, 'UNDER_REVIEW')}>Begin review</button><button className="reject-button" onClick={() => review(application, 'DECLINED')}>Decline</button></>}{senior && application.status === 'UNDER_REVIEW' && <form onSubmit={(event) => quote(event, application)}><input name="monthlyPremium" type="number" min="1" step=".01" defaultValue={assessment?.indicativePremium} required /><input name="overrideReason" placeholder="Override reason when outside ±10%" /><button className="primary">Issue formal quote</button></form>}{!senior && application.status === 'QUOTED' && <button className="primary" onClick={() => accept(application)}>Accept {money.format(application.quotedPremium ?? 0)}/month and activate</button>}</div></article>;
+      return <article className="panel application-card" key={application.id}>
+        <div><span className="eyebrow">{application.applicationNumber ?? 'Draft application'}</span><h2>{asset?.description ?? titleCase(application.assetType)}</h2><Status value={application.status} /></div>
+        <p>{assessment ? `Indicative range ${money.format(assessment.rangeLow)}–${money.format(assessment.rangeHigh)} per month. This is not active cover.` : 'The indicative assessment is still pending.'}</p>
+        {application.missingInformation.length > 0 && <small>Missing: {application.missingInformation.join(', ')}</small>}
+        <div className="application-actions">
+          {senior && ['SUBMITTED', 'MORE_INFO_REQUIRED'].includes(application.status) && <><button className="secondary" onClick={() => review(application, 'UNDER_REVIEW')}>Begin review</button><button className="reject-button" onClick={() => review(application, 'DECLINED')}>Decline</button></>}
+          {senior && application.status === 'UNDER_REVIEW' && <form onSubmit={(event) => quote(event, application)}><input name="monthlyPremium" type="number" min="1" step=".01" defaultValue={assessment?.indicativePremium} required /><input name="overrideReason" placeholder="Override reason when outside ±10%" /><button className="primary">Issue formal quote</button></form>}
+          {capabilities.isClient && application.status === 'QUOTED' && <button className="primary" onClick={() => accept(application)}>Accept {money.format(application.quotedPremium ?? 0)}/month and activate</button>}
+        </div>
+      </article>;
     })}</section>
     {portfolio.policies.length ? <div className="policy-list">{portfolio.policies.map((policy) => {
       const linked = portfolio.assets.filter((asset) => asset.policyId === policy.id);
