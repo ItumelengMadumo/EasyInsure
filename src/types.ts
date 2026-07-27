@@ -1,11 +1,66 @@
 export type Page =
   | 'overview'
+  | 'personaLab'
   | 'assets'
   | 'policies'
   | 'claims'
   | 'documents'
   | 'review'
   | 'profile';
+
+export type BusinessRole =
+  | 'client'
+  | 'junior_officer'
+  | 'intermediate_officer'
+  | 'senior_officer'
+  | 'developer'
+  | 'superuser';
+
+export type PersonaCapabilities = {
+  visiblePages: Page[];
+  isClient: boolean;
+  isStaff: boolean;
+  canOperateClaims: boolean;
+  canAssessClaims: boolean;
+  canReviewUnderwriting: boolean;
+  canDecideClaims: boolean;
+  canViewAllClaims: boolean;
+  canViewInternalRecords: boolean;
+};
+
+export type SimulationScenarioId =
+  | 'golden-journey' | 'empty-client' | 'asset-application' | 'underwriting-info'
+  | 'quote-acceptance' | 'active-cover' | 'claim-draft' | 'claim-unassigned'
+  | 'affidavit-scan' | 'junior-validation' | 'information-loop' | 'claim-assessment'
+  | 'senior-decision' | 'failed-communication' | 'payment-pending' | 'closed-claim'
+  | 'suspended-account' | 'access-denied' | 'role-conflict';
+
+export type WorkspaceSession = {
+  authenticatedRole: BusinessRole;
+  effectiveRole: BusinessRole;
+  mode: 'live' | 'simulation';
+  scenario: SimulationScenarioId | null;
+  capabilities: PersonaCapabilities;
+};
+
+export type SimulationCommand = {
+  kind: 'mutation' | 'model' | 'query';
+  operation: string;
+  model?: string;
+  args: Record<string, unknown>;
+};
+
+export type SimulationEvent = {
+  id: string;
+  operation: string;
+  occurredAt: string;
+  actorRole: BusinessRole;
+};
+
+export type WorkspaceAdapter = {
+  mode: 'live' | 'simulation';
+  execute(command: SimulationCommand): Promise<{ data?: any; errors?: Array<{ message: string }> }>;
+};
 
 export type Asset = {
   id: string;

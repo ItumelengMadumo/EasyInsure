@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { ClaimTable, EmptyState, PageHeader, Status } from '../components/ui';
 import { client } from '../lib/data';
 import { money, titleCase } from '../lib/format';
-import type { Claim, Portfolio } from '../types';
+import type { Claim, PersonaCapabilities, Portfolio } from '../types';
 
-type Props = { portfolio: Portfolio; groups: string[]; refresh: () => Promise<void>; notify: (message: string) => void };
-export function ReviewPage({ portfolio, groups, refresh, notify }: Props) {
+type Props = { portfolio: Portfolio; capabilities: PersonaCapabilities; refresh: () => Promise<void>; notify: (message: string) => void };
+export function ReviewPage({ portfolio, capabilities, refresh, notify }: Props) {
   const queue = portfolio.claims.filter((claim) => claim.status === 'DECISION_PENDING');
   const [selected, setSelected] = useState<Claim | null>(queue[0] ?? null);
-  const senior = groups.some((group) => ['senior_officer', 'superuser'].includes(group));
+  const senior = capabilities.canDecideClaims;
   async function decide(action: 'approve' | 'reject') {
     if (!selected) return;
     const result = action === 'approve'

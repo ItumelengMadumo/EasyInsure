@@ -3,9 +3,9 @@ import { uploadData } from 'aws-amplify/storage';
 import { EmptyState, Field, PageHeader, Status } from '../components/ui';
 import { client } from '../lib/data';
 import { money, shortDate, titleCase } from '../lib/format';
-import type { Portfolio } from '../types';
+import type { PersonaCapabilities, Portfolio } from '../types';
 
-type Props = { portfolio: Portfolio; owner: string; refresh: () => Promise<void>; notify: (message: string) => void };
+type Props = { portfolio: Portfolio; owner: string; mode: 'live' | 'simulation'; capabilities: PersonaCapabilities; refresh: () => Promise<void>; notify: (message: string) => void };
 type DefinitionField = { key: string; label: string; section: string; type: string; required?: boolean; options?: string[] };
 type Definitions = Record<string, { assetType: string; schemaVersion: string; fields: DefinitionField[] }>;
 const categories = [
@@ -17,7 +17,7 @@ const categories = [
 ];
 const steps = ['category', 'ownership', 'identity', 'specifications', 'condition', 'usage', 'security', 'valuation', 'risk', 'review'];
 
-export function AssetsPage({ portfolio, owner, refresh, notify }: Props) {
+export function AssetsPage({ portfolio, owner, mode, capabilities, refresh, notify }: Props) {
   const [definitions, setDefinitions] = useState<Definitions>({});
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
@@ -112,7 +112,7 @@ export function AssetsPage({ portfolio, owner, refresh, notify }: Props) {
       const objectKey = `quarantine/${owner}/applications/${applicationId}/${crypto.randomUUID()}-${evidence.name}`;
       const digest = await crypto.subtle.digest('SHA-256', await evidence.arrayBuffer());
       const checksum = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-      await uploadData({ path: objectKey, data: evidence, options: { contentType: evidence.type } }).result;
+      if (mode === 'live') await uploadData({ path: objectKey, data: evidence, options: { contentType: evidence.type } }).result;
       const document = await client.models.ApplicationDocument.create({
         owner, applicationId, category: 'VALUATION', objectKey, fileName: evidence.name, mediaType: evidence.type,
         byteSize: evidence.size, checksum, status: 'QUARANTINED', uploadedAt: new Date().toISOString(),
@@ -127,7 +127,7 @@ export function AssetsPage({ portfolio, owner, refresh, notify }: Props) {
   }
   const clear = () => { setQuery(''); setCategory(''); setStatus(''); setCover(''); setCondition(''); setMinValue(''); setMaxValue(''); setPremiumMin(''); setPremiumMax(''); setSort('newest'); };
   return <>
-    <PageHeader eyebrow="Asset underwriting" title="Apply for cover, asset by asset." description="Build a rigorous asset record, declare relevant risk history, receive an indicative range and submit it for human underwriting." action={<button className="primary" onClick={() => setOpen(true)}>+ Start application</button>} />
+    <PageHeader eyebrow="Asset underwriting" title={capabilities.isClient ? 'Apply for cover, asset by asset.' : 'Asset applications and insured property.'} description="Build a rigorous asset record, declare relevant risk history, receive an indicative range and submit it for human underwriting." action={capabilities.isClient ? <button className="primary" onClick={() => setOpen(true)}>+ Start application</button> : undefined} />
     {open && <div className="wizard-backdrop"><form className="asset-wizard" onSubmit={step === steps.length - 1 ? submit : next}>
       <header><div><span className="eyebrow">Resumable policy application</span><h2>{titleCase(section)}</h2><p>Step {step + 1} of {steps.length}. Your answers are saved as you continue.</p></div><button type="button" className="icon-button" onClick={close}>×</button></header>
       <div className="application-progress">{steps.map((item, index) => <span className={index <= step ? 'active' : ''} key={item}>{index + 1}<small>{titleCase(item)}</small></span>)}</div>

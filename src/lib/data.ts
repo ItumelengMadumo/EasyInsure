@@ -1,7 +1,46 @@
 import { generateClient } from 'aws-amplify/data';
 import type { Portfolio } from '../types';
 
-export const client: any = generateClient();
+const amplifyClient: any = generateClient();
+type SimulationExecutor = (command: { kind: 'mutation' | 'model' | 'query'; operation: string; model?: string; args: Record<string, unknown> }) => Promise<any>;
+let simulationExecutor: SimulationExecutor | null = null;
+const mutationProxy = new Proxy(amplifyClient.mutations, {
+  get(target, property) {
+    return simulationExecutor
+      ? (args: Record<string, unknown> = {}) => simulationExecutor!({ kind: 'mutation', operation: String(property), args })
+      : Reflect.get(target, property);
+  },
+});
+const modelsProxy = new Proxy(amplifyClient.models, {
+  get(target, property) {
+    const model = Reflect.get(target, property);
+    if (!model || typeof model !== 'object') return model;
+    return new Proxy(model, {
+      get(modelTarget, operation) {
+        if (simulationExecutor && ['create', 'update', 'delete'].includes(String(operation))) {
+          return (args: Record<string, unknown> = {}) => simulationExecutor!({ kind: 'model', model: String(property), operation: String(operation), args });
+        }
+        return Reflect.get(modelTarget, operation);
+      },
+    });
+  },
+});
+export const client: any = new Proxy(amplifyClient, {
+  get(target, property) {
+    if (property === 'mutations') return mutationProxy;
+    if (property === 'models') return modelsProxy;
+    if (property === 'queries' && simulationExecutor) {
+      return new Proxy(amplifyClient.queries, {
+        get(_target, operation) {
+          return (args: Record<string, unknown> = {}) => simulationExecutor!({ kind: 'query', operation: String(operation), args });
+        },
+      });
+    }
+    return Reflect.get(target, property);
+  },
+});
+export const setSimulationExecutor = (executor: SimulationExecutor | null) => { simulationExecutor = executor; };
+export const isSimulationMode = () => Boolean(simulationExecutor);
 const values = (result: any) => result.data ?? [];
 const firstError = (results: any[]) => results.flatMap((result) => result.errors ?? [])[0];
 

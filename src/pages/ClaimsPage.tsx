@@ -1,12 +1,12 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { uploadData } from 'aws-amplify/storage';
 import { ClaimTable, Field, PageHeader, Status } from '../components/ui';
-import { client } from '../lib/data';
+import { client, isSimulationMode } from '../lib/data';
 import { money, shortDate, titleCase } from '../lib/format';
-import type { Claim, ClaimActivity, ClaimCommunication, Portfolio } from '../types';
+import type { Claim, ClaimActivity, ClaimCommunication, PersonaCapabilities, Portfolio } from '../types';
 
 type Props = {
-  portfolio: Portfolio; owner: string; groups: string[];
+  portfolio: Portfolio; owner: string; capabilities: PersonaCapabilities;
   refresh: () => Promise<void>; notify: (message: string) => void;
 };
 const milestones = ['SUBMITTED', 'VALIDATING', 'UNDER_ASSESSMENT', 'DECISION_PENDING', 'APPROVED', 'PAYMENT_PENDING', 'PAID', 'CLOSED'];
@@ -18,7 +18,7 @@ async function uploadClaimFile(owner: string, claimId: string, file: File, categ
   const objectKey = `quarantine/${owner}/${claimId}/${crypto.randomUUID()}-${file.name}`;
   const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
   const checksum = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-  await uploadData({ path: objectKey, data: file, options: { contentType: file.type } }).result;
+  if (!isSimulationMode()) await uploadData({ path: objectKey, data: file, options: { contentType: file.type } }).result;
   const document = await client.models.ClaimDocument.create({
     owner, claimId, objectKey, fileName: file.name, mediaType: file.type, byteSize: file.size,
     checksum, status: 'QUARANTINED', uploadedBy: owner, category, visibility: 'CLIENT_VISIBLE',
@@ -26,17 +26,17 @@ async function uploadClaimFile(owner: string, claimId: string, file: File, categ
   if (document.errors?.length) throw new Error(document.errors[0].message);
 }
 
-export function ClaimsPage({ portfolio, owner, groups, refresh, notify }: Props) {
+export function ClaimsPage({ portfolio, owner, capabilities, refresh, notify }: Props) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('ALL');
   const [selected, setSelected] = useState<Claim | null>(null);
   const [sending, setSending] = useState(false);
-  const isSenior = groups.some((group) => ['senior_officer', 'superuser'].includes(group));
-  const isDeveloper = groups.includes('developer');
-  const isStaff = groups.some((group) => group.includes('officer') || ['developer', 'superuser'].includes(group));
-  const canOperate = isStaff && !isDeveloper;
+  const isSenior = capabilities.canDecideClaims;
+  const isDeveloper = capabilities.canViewAllClaims && !capabilities.canOperateClaims && capabilities.isStaff;
+  const isStaff = capabilities.isStaff;
+  const canOperate = capabilities.canOperateClaims;
   const assignedIds = new Set(portfolio.assignments.filter((item) => item.active && item.userSubject === owner).map((item) => item.claimId));
-  const roleClaims = isSenior || isDeveloper ? portfolio.claims : isStaff ? portfolio.claims.filter((claim) => assignedIds.has(claim.id)) : portfolio.claims;
+  const roleClaims = capabilities.canViewAllClaims ? portfolio.claims : isStaff ? portfolio.claims.filter((claim) => assignedIds.has(claim.id)) : portfolio.claims;
   const claims = filter === 'ALL' ? roleClaims : roleClaims.filter((claim) => claim.status === filter);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -110,7 +110,7 @@ export function ClaimsPage({ portfolio, owner, groups, refresh, notify }: Props)
     <CaseStats claims={roleClaims} assignments={portfolio.assignments} isSenior={isSenior} />
     <div className="filter-tabs">{['ALL', 'ASSIGNMENT_PENDING', 'VALIDATING', 'UNDER_ASSESSMENT', 'INFO_NEEDED', 'DECISION_PENDING', 'APPROVED', 'PAID', 'CLOSED'].map((status) => <button className={filter === status ? 'active' : ''} onClick={() => setFilter(status)} key={status}>{status === 'ALL' ? 'All cases' : titleCase(status)}</button>)}</div>
     <section className="panel table-panel"><ClaimTable claims={claims} onSelect={setSelected} /></section>
-    {selected && <CaseDrawer claim={portfolio.claims.find((item) => item.id === selected.id) ?? selected} portfolio={portfolio} isStaff={isStaff} canOperate={canOperate} isSenior={isSenior} onClose={() => setSelected(null)} onSend={sendMessage} onInternalNote={addInternalNote} refresh={refresh} notify={notify} />}
+    {selected && <CaseDrawer claim={portfolio.claims.find((item) => item.id === selected.id) ?? selected} portfolio={portfolio} isStaff={isStaff} canOperate={canOperate} canAssess={capabilities.canAssessClaims} isSenior={isSenior} onClose={() => setSelected(null)} onSend={sendMessage} onInternalNote={addInternalNote} refresh={refresh} notify={notify} />}
   </>;
 }
 
@@ -118,8 +118,8 @@ function CaseStats({ claims, assignments, isSenior }: { claims: Claim[]; assignm
   return <div className="case-stats"><div><small>{isSenior ? 'Total portfolio' : 'My portfolio'}</small><strong>{claims.length}</strong></div><div><small>Needs client response</small><strong>{claims.filter((item) => item.status === 'INFO_NEEDED').length}</strong></div><div><small>Decision pending</small><strong>{claims.filter((item) => item.status === 'DECISION_PENDING').length}</strong></div><div><small>Unassigned</small><strong>{claims.filter((claim) => !assignments.some((item) => item.claimId === claim.id && item.active && item.isLead)).length}</strong></div></div>;
 }
 
-function CaseDrawer({ claim, portfolio, isStaff, canOperate, isSenior, onClose, onSend, onInternalNote, refresh, notify }: {
-  claim: Claim; portfolio: Portfolio; isStaff: boolean; canOperate: boolean; isSenior: boolean; onClose: () => void;
+function CaseDrawer({ claim, portfolio, isStaff, canOperate, canAssess, isSenior, onClose, onSend, onInternalNote, refresh, notify }: {
+  claim: Claim; portfolio: Portfolio; isStaff: boolean; canOperate: boolean; canAssess: boolean; isSenior: boolean; onClose: () => void;
   onSend: (event: FormEvent<HTMLFormElement>) => void; onInternalNote: (event: FormEvent<HTMLFormElement>) => void;
   refresh: () => Promise<void>; notify: (message: string) => void;
 }) {
@@ -207,11 +207,11 @@ function CaseDrawer({ claim, portfolio, isStaff, canOperate, isSenior, onClose, 
     const result = await client.mutations.finalizeClaimPayoutAssessment({ assessmentId: id, idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() });
     if (result.errors?.length) notify(result.errors[0].message); else { notify('Assessment finalized for senior payout decision.'); await refresh(); }
   }
-  const nextAction = claim.status === 'VALIDATING' ? ['START', 'Start assessment']
-    : claim.status === 'APPROVED' ? ['PAYMENT_PENDING', 'Prepare payment']
-      : claim.status === 'PAYMENT_PENDING' ? ['PAID', 'Mark as paid']
+  const nextAction = claim.status === 'VALIDATING' && canAssess ? ['START', 'Start assessment']
+    : claim.status === 'APPROVED' && isSenior ? ['PAYMENT_PENDING', 'Prepare payment']
+      : claim.status === 'PAYMENT_PENDING' && isSenior ? ['PAID', 'Mark as paid']
         : ['PAID', 'REJECTED'].includes(claim.status) && isSenior ? ['CLOSE', 'Close case'] : null;
-  return <div className="case-backdrop" onClick={onClose}><section className="case-panel" onClick={(event) => event.stopPropagation()}>
+  return <div className="case-backdrop" onClick={onClose}><section className={`case-panel ${isStaff && !canOperate ? 'diagnostics-only' : ''} ${!canAssess ? 'no-assessment' : ''}`} onClick={(event) => event.stopPropagation()}>
     <header className="case-header"><div><span className="eyebrow">EasyInsure case file</span><h2>{claim.claimNumber ?? 'Draft claim'}</h2><p>Police reference · {claim.policeCaseNumber ?? 'Legacy record'}</p></div><div><Status value={claim.status} /><button className="icon-button" onClick={onClose}>×</button></div></header>
     <div className="case-owner-strip"><span><small>Claim type</small><strong>{titleCase(claim.claimType)}</strong></span><span><small>Payout assessment</small><strong>{claim.suggestedPayout != null ? money.format(claim.suggestedPayout) : 'Pending evidence review'}</strong></span><span><small>Lead advisor</small><strong>{lead?.userDisplayNameSnapshot ?? 'Assignment in progress'}</strong></span><span><small>Submitted</small><strong>{shortDate(claim.submittedAt)}</strong></span></div>
     <div className="case-progress"><div className="progress-line"><i style={{ width: `${Math.min(100, currentIndex / (milestones.length - 1) * 100)}%` }} /></div>{milestones.map((item, index) => <span className={index <= currentIndex ? 'complete' : ''} key={item}><b>{index < currentIndex ? '✓' : index + 1}</b><small>{titleCase(item)}</small></span>)}</div>
