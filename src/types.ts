@@ -1,11 +1,20 @@
 export type Page =
   | 'overview'
+  | 'personaLab'
   | 'assets'
   | 'policies'
   | 'claims'
   | 'documents'
   | 'review'
   | 'profile';
+
+export type BusinessRole =
+  | 'client'
+  | 'junior_officer'
+  | 'intermediate_officer'
+  | 'senior_officer'
+  | 'developer'
+  | 'superuser';
 
 export type Asset = {
   id: string;

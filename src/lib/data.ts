@@ -1,7 +1,32 @@
 import { generateClient } from 'aws-amplify/data';
 import type { Portfolio } from '../types';
 
-export const client: any = generateClient();
+const amplifyClient: any = generateClient();
+let previewReadOnly = false;
+const previewError = () => Promise.reject(new Error('Preview mode is read-only. No Amplify command was sent.'));
+const mutationProxy = new Proxy(amplifyClient.mutations, {
+  get(target, property) { return previewReadOnly ? previewError : Reflect.get(target, property); },
+});
+const modelsProxy = new Proxy(amplifyClient.models, {
+  get(target, property) {
+    const model = Reflect.get(target, property);
+    if (!model || typeof model !== 'object') return model;
+    return new Proxy(model, {
+      get(modelTarget, operation) {
+        if (previewReadOnly && ['create', 'update', 'delete'].includes(String(operation))) return previewError;
+        return Reflect.get(modelTarget, operation);
+      },
+    });
+  },
+});
+export const client: any = new Proxy(amplifyClient, {
+  get(target, property) {
+    if (property === 'mutations') return mutationProxy;
+    if (property === 'models') return modelsProxy;
+    return Reflect.get(target, property);
+  },
+});
+export const setPreviewReadOnly = (value: boolean) => { previewReadOnly = value; };
 const values = (result: any) => result.data ?? [];
 const firstError = (results: any[]) => results.flatMap((result) => result.errors ?? [])[0];
 

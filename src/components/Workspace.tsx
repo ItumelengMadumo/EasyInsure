@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader } from '@aws-amplify/ui-react';
 import { fetchAuthSession, fetchUserAttributes, getCurrentUser } from 'aws-amplify/auth';
-import { client, loadPortfolio } from '../lib/data';
+import { client, loadPortfolio, setPreviewReadOnly } from '../lib/data';
 import { initials, titleCase } from '../lib/format';
-import type { Page, Portfolio } from '../types';
+import { createPersonaPortfolio, personaByRole, personaLabEnabled, resolveRole } from '../lib/personas';
+import type { BusinessRole, Page, Portfolio } from '../types';
 import { OverviewPage } from '../pages/OverviewPage';
 import { AssetsPage } from '../pages/AssetsPage';
 import { PoliciesPage } from '../pages/PoliciesPage';
@@ -11,6 +12,7 @@ import { ClaimsPage } from '../pages/ClaimsPage';
 import { DocumentsPage } from '../pages/DocumentsPage';
 import { ReviewPage } from '../pages/ReviewPage';
 import { ProfilePage } from '../pages/ProfilePage';
+import { PersonaLabPage } from '../pages/PersonaLabPage';
 import { PageErrorBoundary } from './PageErrorBoundary';
 
 const emptyPortfolio: Portfolio = {
@@ -24,6 +26,7 @@ const nav: { page: Page; label: string; icon: string; section?: string }[] = [
   { page: 'claims', label: 'Claims', icon: '◫' },
   { page: 'documents', label: 'Document locker', icon: '□' },
   { page: 'review', label: 'Review queue', icon: '✓', section: 'Operations' },
+  { page: 'personaLab', label: 'Persona Lab', icon: '◎', section: 'Development' },
   { page: 'profile', label: 'Profile & security', icon: '○', section: 'Account' },
 ];
 const humanName = (value: string) => value.trim().replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -39,6 +42,7 @@ export function Workspace({ signOut }: { signOut?: () => void }) {
   const [busy, setBusy] = useState(true);
   const [notice, setNotice] = useState('');
   const [mobileNav, setMobileNav] = useState(false);
+  const [previewRole, setPreviewRole] = useState<BusinessRole | null>(null);
 
   const refresh = useCallback(async () => {
     try { setPortfolio(await loadPortfolio(groupsRef.current)); }
@@ -69,27 +73,48 @@ export function Workspace({ signOut }: { signOut?: () => void }) {
   }, [page]);
 
   useEffect(() => {
+    if (previewRole) return;
     const subscription = client.models.Claim.onUpdate({}).subscribe({ next: refresh, error: () => setNotice('Live updates paused. Refresh to reconnect.') });
     return () => subscription.unsubscribe();
-  }, [refresh]);
+  }, [previewRole, refresh]);
+  useEffect(() => () => setPreviewReadOnly(false), []);
 
-  const role = portfolio.profile?.businessRole ?? (groups[0] || 'client');
-  const isStaff = groups.some((group) => group.includes('officer') || ['developer', 'superuser'].includes(group));
-  const isDeveloper = groups.includes('developer');
-  const availableNav = nav.filter((item) => item.page !== 'review' || isStaff);
-  const profileName = String(portfolio.profile?.displayName ?? '').trim();
+  const ownProfile = portfolio.profiles.find((profile) => profile.owner === owner) ?? portfolio.profile;
+  const identity = resolveRole(groups, ownProfile?.businessRole);
+  const liveRole = identity.role;
+  const effectiveRole = previewRole ?? liveRole ?? 'client';
+  const effectiveGroups = previewRole ? [previewRole] : groups;
+  const effectivePortfolio = previewRole ? createPersonaPortfolio(previewRole) : portfolio;
+  const isStaff = effectiveGroups.some((group) => group.includes('officer') || ['developer', 'superuser'].includes(group));
+  const isDeveloper = effectiveGroups.includes('developer');
+  const mayUseLab = personaLabEnabled() && Boolean(liveRole && ['developer', 'superuser'].includes(liveRole));
+  const availableNav = nav.filter((item) => item.page === 'review' ? isStaff : item.page === 'personaLab' ? mayUseLab && !previewRole : true);
+  const profileName = String(effectivePortfolio.profile?.displayName ?? '').trim();
   const displayName = profileName && !/^easy\s*insure(?:\s+member)?$/i.test(profileName)
-    ? profileName : authenticatedName || humanName(String(portfolio.profile?.email ?? '').split('@')[0].replace(/[._-]+/g, ' ')) || 'Member';
-  const props = { portfolio, owner, refresh, notify: setNotice };
+    ? profileName : authenticatedName || humanName(String(effectivePortfolio.profile?.email ?? '').split('@')[0].replace(/[._-]+/g, ' ')) || 'Member';
+  const previewRefresh = async () => setNotice('Preview data is fixed. Exit and reopen the preview to reset it.');
+  const props = { portfolio: effectivePortfolio, owner: previewRole ? `persona-${previewRole}` : owner, refresh: previewRole ? previewRefresh : refresh, notify: setNotice };
+  const startPreview = (nextRole: BusinessRole) => {
+    setPreviewReadOnly(true); setPreviewRole(nextRole); setPage('overview'); setNotice('');
+  };
+  const exitPreview = () => {
+    setPreviewReadOnly(false); setPreviewRole(null); setPage('personaLab'); setNotice('');
+  };
+
   let content;
   if (busy) content = <div className="center"><Loader size="large" /></div>;
+  else if (identity.conflict && !previewRole) content = <section className="panel page-error" role="alert">
+    <span>Identity verification required</span><h1>Operational access is paused.</h1>
+    <p>{identity.conflict} A superuser must correct the Cognito group or profile before this account can read or change insurance records.</p>
+  </section>;
   else if (page === 'assets') content = <AssetsPage {...props} />;
-  else if (page === 'policies') content = <PoliciesPage {...props} groups={groups} />;
-  else if (page === 'claims') content = <ClaimsPage {...props} groups={groups} />;
+  else if (page === 'policies') content = <PoliciesPage {...props} groups={effectiveGroups} />;
+  else if (page === 'claims') content = <ClaimsPage {...props} groups={effectiveGroups} />;
   else if (page === 'documents') content = <DocumentsPage {...props} />;
-  else if (page === 'review') content = <ReviewPage {...props} groups={groups} />;
-  else if (page === 'profile') content = <ProfilePage {...props} role={role} />;
-  else content = <OverviewPage portfolio={portfolio} go={setPage} displayName={displayName} />;
+  else if (page === 'review') content = <ReviewPage {...props} groups={effectiveGroups} />;
+  else if (page === 'personaLab' && mayUseLab) content = <PersonaLabPage groups={groups} profileRole={ownProfile?.businessRole} previewRole={previewRole} startPreview={startPreview} />;
+  else if (page === 'profile') content = <ProfilePage {...props} role={effectiveRole} />;
+  else content = <OverviewPage portfolio={effectivePortfolio} go={setPage} displayName={displayName} />;
 
   return <div className="app">
     <aside className={mobileNav ? 'nav-open' : ''}>
@@ -101,11 +126,15 @@ export function Workspace({ signOut }: { signOut?: () => void }) {
     <main>
       <header className="topbar">
         <button className="menu-button" onClick={() => setMobileNav(!mobileNav)}>☰</button>
-        <div className={`system-state ${isDeveloper ? 'developer' : ''}`}><span className="pulse" /> {isDeveloper ? 'Developer diagnostics enabled' : 'All systems operational'}</div>
-        <div className="user-chip"><span className="avatar">{initials(displayName)}</span><div><strong>{displayName}</strong><small>{titleCase(role)}</small></div></div>
+        <div className={`system-state ${isDeveloper ? 'developer' : ''}`}><span className="pulse" /> {previewRole ? `${personaByRole(previewRole).label} preview` : isDeveloper ? 'Developer diagnostics enabled' : 'All systems operational'}</div>
+        <div className="user-chip"><span className="avatar">{initials(displayName)}</span><div><strong>{displayName}</strong><small>{titleCase(effectiveRole)}</small></div></div>
       </header>
+      {identity.conflict && !previewRole && <div className="notice identity-conflict" role="alert"><span>Access held: {identity.conflict} Contact a superuser before performing operational work.</span></div>}
+      {previewRole && <div className="preview-banner" role="status"><strong>PREVIEW — NO CHANGES ARE SAVED</strong><span>Synthetic {personaByRole(previewRole).label} workspace</span><button onClick={exitPreview}>Exit preview</button></div>}
       {notice && <div className="notice" role="status"><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Dismiss">×</button></div>}
-      <div className="page"><PageErrorBoundary page={page} onReset={() => setPage('overview')}>{content}</PageErrorBoundary></div>
+      <div className="page" onSubmitCapture={previewRole ? (event) => { event.preventDefault(); event.stopPropagation(); setNotice('Preview mode is read-only. No data was sent.'); } : undefined}>
+        <PageErrorBoundary page={page} onReset={() => setPage('overview')}>{content}</PageErrorBoundary>
+      </div>
     </main>
   </div>;
 }
