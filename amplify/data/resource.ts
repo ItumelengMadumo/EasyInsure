@@ -431,6 +431,7 @@ const schema = a.schema({
     .authorization((allow) => [allow.groups(staff)])
     .handler(a.handler.function(claimsCommand)),
   ensureUserProfile: a.mutation()
+    .arguments({ email: a.string(), displayName: a.string() })
     .returns(a.ref('UserProfile'))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(claimsCommand)),

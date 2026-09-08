@@ -96,7 +96,7 @@ export function AssetsPage({ portfolio, owner, refresh, notify }: Props) {
         id = draft.data.id; setApplicationId(id);
       }
       const saved = await client.mutations.saveAssetApplicationSection({
-        applicationId: id, section, answers: nextAnswers, idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID(),
+        applicationId: id, section, answers: JSON.stringify(nextAnswers), idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID(),
       });
       if (saved.errors?.length) throw new Error(saved.errors[0].message);
       setStep(Math.min(step + 1, steps.length - 1));

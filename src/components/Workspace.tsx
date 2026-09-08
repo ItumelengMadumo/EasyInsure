@@ -56,7 +56,14 @@ export function Workspace({ signOut }: { signOut?: () => void }) {
       const resolvedGroups = Array.isArray(raw) ? raw.map(String) : [];
       groupsRef.current = resolvedGroups;
       setGroups(resolvedGroups);
-      return client.mutations.ensureUserProfile({}).then(() => refresh());
+      // The AppSync access token carries no email/name claim, so the resolver
+      // cannot see a human identity unless the authenticated client forwards it.
+      const profileEmail = String(attributes.email ?? '').trim();
+      const profileDisplayName = String(attributes.name ?? attributes.preferred_username ?? '').trim();
+      return client.mutations.ensureUserProfile({
+        ...(profileEmail ? { email: profileEmail } : {}),
+        ...(profileDisplayName ? { displayName: profileDisplayName } : {}),
+      }).then(() => refresh());
     }).catch(() => { setNotice('Unable to resolve your secure workspace.'); setBusy(false); });
     const sub = (window as any).__easyInsureClaimSubscription;
     return () => sub?.unsubscribe?.();

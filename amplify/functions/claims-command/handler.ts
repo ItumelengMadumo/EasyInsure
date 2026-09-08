@@ -4,7 +4,7 @@ import { generateClient } from 'aws-amplify/data';
 import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
 import { SFNClient, StartExecutionCommand } from '@aws-sdk/client-sfn';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
-import { canTransition, validateDraftPrerequisites } from './domain';
+import { canTransition, coerceJsonObject, resolveProfileIdentity, validateDraftPrerequisites } from './domain';
 import { ASSET_SCHEMA_VERSION, PREMIUM_FORMULA_VERSION, calculatePremium, calculateRecommendedPayout, categoryDefinitions, validateApplication } from './underwriting';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(process.env as never);
@@ -166,7 +166,7 @@ export const handler = async (event: ResolverEvent) => {
     const application = await client.models.PolicyApplication.get({ id: String(args.applicationId) });
     if (!application.data || (application.data.owner !== actor.subject && !isSenior(actor))) throw new Error('Application not found');
     if (application.data.status !== 'DRAFT' && application.data.status !== 'MORE_INFO_REQUIRED') throw new Error('This application is read-only');
-    const merged = { ...(application.data.answers as Record<string, unknown>), ...(args.answers as Record<string, unknown>) };
+    const merged = { ...coerceJsonObject(application.data.answers, 'answers'), ...coerceJsonObject(args.answers, 'answers') };
     const section = clean(args.section, 'section');
     const completed = [...new Set([...(application.data.completedSections ?? []), section])];
     const result = await client.models.PolicyApplication.update({
@@ -298,18 +298,27 @@ export const handler = async (event: ResolverEvent) => {
   }
 
   if (event.fieldName === 'ensureUserProfile') {
+    const resolved = resolveProfileIdentity({
+      claims: event.identity?.claims, email: args.email, displayName: args.displayName, subject: actor.subject,
+    });
+    const resolvedIsReal = !resolved.email.endsWith('@profile.invalid');
     const existing = await client.models.UserProfile.list({ filter: { owner: { eq: actor.subject } } });
     const role = ['client', ...staffGroups].includes(actor.role) ? actor.role : 'client';
     if (existing.data[0]) {
-      if (existing.data[0].businessRole !== role || existing.data[0].status !== 'active') {
-        const updated = await client.models.UserProfile.update({ id: existing.data[0].id, businessRole: role, status: 'active' });
-        if (updated.errors?.length || !updated.data) throw new Error(updated.errors?.[0]?.message ?? 'Profile synchronization failed');
-        return updated.data;
-      }
-      return existing.data[0];
+      const current = existing.data[0];
+      const storedIsPlaceholder = String(current.email ?? '').endsWith('@profile.invalid')
+        || !String(current.displayName ?? '').trim() || current.displayName === current.owner;
+      const patch: Record<string, unknown> = {};
+      if (current.businessRole !== role) patch.businessRole = role;
+      if (current.status !== 'active') patch.status = 'active';
+      if (resolvedIsReal && storedIsPlaceholder) { patch.email = resolved.email; patch.displayName = resolved.displayName; }
+      if (!Object.keys(patch).length) return current;
+      const updated = await client.models.UserProfile.update({ id: current.id, ...patch });
+      if (updated.errors?.length || !updated.data) throw new Error(updated.errors?.[0]?.message ?? 'Profile synchronization failed');
+      return updated.data;
     }
     const result = await client.models.UserProfile.create({
-      owner: actor.subject, email: actor.email, displayName: actor.displayName,
+      owner: actor.subject, email: resolved.email, displayName: resolved.displayName,
       businessRole: role, status: 'active',
     });
     if (result.errors?.length || !result.data) throw new Error(result.errors?.[0]?.message ?? 'Profile provisioning failed');

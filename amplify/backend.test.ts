@@ -6,7 +6,7 @@ import {
   DATA_REGION,
 } from './config/regions';
 import { buildInferencePayload, redactText } from './functions/claims-copilot/privacy';
-import { canTransition, validateDraftPrerequisites } from './functions/claims-command/domain';
+import { canTransition, coerceJsonObject, resolveProfileIdentity, validateDraftPrerequisites } from './functions/claims-command/domain';
 import { calculatePremium, calculateRecommendedPayout, validateApplication } from './functions/claims-command/underwriting';
 
 describe('regional deployment boundary', () => {
@@ -85,11 +85,53 @@ describe('asset underwriting and evidence-based payouts', () => {
     })).toBe(65_000);
   });
 
+  it('accepts application answers whether AppSync delivers a JSON string or an object', () => {
+    // The Amplify custom-operation client sends AWSJSON arguments as a string.
+    expect(coerceJsonObject('{"ownershipType":"Owned outright","financeProvider":""}')).toEqual({
+      ownershipType: 'Owned outright', financeProvider: '',
+    });
+    expect(coerceJsonObject({ ownershipType: 'Financed' })).toEqual({ ownershipType: 'Financed' });
+    expect(coerceJsonObject(null)).toEqual({});
+    expect(coerceJsonObject(undefined)).toEqual({});
+    expect(() => coerceJsonObject('not json', 'answers')).toThrow('answers must be valid JSON');
+    expect(() => coerceJsonObject('[1,2,3]', 'answers')).toThrow('answers must be a JSON object');
+  });
+
   it('removes client-supplied payout amounts from claim commands', () => {
     const schema = readFileSync('amplify/data/resource.ts', 'utf8');
     const draftCommand = schema.slice(schema.indexOf('createClaimDraft:'), schema.indexOf('submitClaimDraft:'));
     expect(draftCommand).not.toContain('amountRequested');
     expect(schema).toContain('ClaimAssessment: a.model');
+  });
+});
+
+describe('workspace profile identity', () => {
+  const subject = '44e844c8-1031-709a-91ef-ffae31e321cb';
+
+  it('prefers a verified Cognito token claim', () => {
+    expect(resolveProfileIdentity({
+      claims: { email: 'thandi@example.co.za', name: 'Thandi M' },
+      email: 'stale@client.test', displayName: 'Stale', subject,
+    })).toEqual({ email: 'thandi@example.co.za', displayName: 'Thandi M' });
+  });
+
+  it('falls back to client-supplied attributes when the access token has no email or name', () => {
+    expect(resolveProfileIdentity({
+      claims: { 'cognito:groups': ['client'] },
+      email: 'thandi@example.co.za', displayName: 'Thandi M', subject,
+    })).toEqual({ email: 'thandi@example.co.za', displayName: 'Thandi M' });
+  });
+
+  it('derives a name from the email local-part when only an address is known', () => {
+    expect(resolveProfileIdentity({ email: 'thandi.m@example.co.za', subject })).toEqual({
+      email: 'thandi.m@example.co.za', displayName: 'thandi.m',
+    });
+  });
+
+  it('never persists the subject placeholder as a human email and ignores a placeholder claim', () => {
+    expect(resolveProfileIdentity({ claims: { email: `${subject}@profile.invalid` }, subject })).toEqual({
+      email: `${subject}@profile.invalid`, displayName: subject,
+    });
   });
 });
 
