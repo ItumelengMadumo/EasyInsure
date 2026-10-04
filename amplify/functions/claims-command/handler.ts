@@ -1,10 +1,13 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/data';
 import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
 import { SFNClient, StartExecutionCommand } from '@aws-sdk/client-sfn';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
-import { canTransition, coerceJsonObject, resolveProfileIdentity, validateDraftPrerequisites } from './domain';
+import {
+  ACCEPTED_DOCUMENT_STATES, ALLOWED_MEDIA_TYPES, MAX_DOCUMENT_BYTES, assertDecisionAuthority, canManuallyTransition,
+  coerceJsonObject, parseQuarantineKey, resolveProfileIdentity, validateDraftPrerequisites,
+} from './domain';
 import { ASSET_SCHEMA_VERSION, PREMIUM_FORMULA_VERSION, calculatePremium, calculateRecommendedPayout, categoryDefinitions, validateApplication } from './underwriting';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(process.env as never);
@@ -46,6 +49,53 @@ const clean = (value: unknown, field: string, min = 1) => {
   return result;
 };
 
+// list() returns a single page; every read here must see the full result set or
+// idempotency checks, access checks and workload balancing silently go wrong.
+async function listAll(model: any, args: Record<string, unknown> = {}) {
+  const data: any[] = [];
+  let nextToken: string | null | undefined;
+  do {
+    const page = await model.list({ ...args, limit: 1000, nextToken });
+    if (page.errors?.length) throw new Error(page.errors[0].message);
+    data.push(...(page.data ?? []));
+    nextToken = page.nextToken;
+  } while (nextToken);
+  return { data };
+}
+
+const CLAIM_FIELDS = `id owner claimNumber policeCaseNumber policyId assetId claimType description incidentDate
+  incidentLocation amountRequested legacyRequestedAmount tier status riskScore fraudFlag fraudReason suggestedPayout
+  approvedPayout approvedBy approvalTimestamp assignedOfficerId currentMilestone submittedAt closedAt lastActivityAt
+  assignmentDueAt idempotencyKey createdAt updatedAt`;
+const APPLICATION_FIELDS = `id owner applicationNumber assetId assetType schemaVersion status answers completedSections
+  missingInformation underwritingProfileId latestAssessmentId quotedPremium quoteExpiresAt submittedAt acceptedAt
+  assignedUnderwriterId idempotencyKey lastUpdatedAt createdAt updatedAt`;
+const ASSESSMENT_FIELDS = `id claimId claimOwner version evidenceReviewed coveredLossValue repairEstimate replacementEstimate
+  policyLimit excess depreciation exclusions recommendedPayout calculationVersion status assessorSubject
+  assessorDisplayNameSnapshot assessorRoleSnapshot overrideReason createdAtSnapshot finalizedAt finalizedBySubject
+  idempotencyKey correlationId createdAt updatedAt`;
+
+// Optimistic concurrency: the write only lands if `status` still holds the value we
+// validated against, so two officers cannot both approve, or approve and reject.
+async function updateIfStatus(model: 'Claim' | 'PolicyApplication' | 'ClaimAssessment', fields: string, input: Record<string, unknown>, expectedStatus: string) {
+  try {
+    const result: any = await client.graphql({
+      query: `mutation Guarded($input: Update${model}Input!, $condition: Model${model}ConditionInput) {
+        update${model}(input: $input, condition: $condition) { ${fields} } }`,
+      variables: { input, condition: { status: { eq: expectedStatus } } },
+    });
+    return result.data[`update${model}`];
+  } catch (error: any) {
+    const message = error?.errors?.[0]?.errorType ?? error?.errors?.[0]?.message ?? String(error);
+    if (String(message).includes('ConditionalCheckFailed')) {
+      throw new Error('This record was changed by someone else. Refresh and try again.', { cause: error });
+    }
+    throw new Error(error?.errors?.[0]?.message ?? 'Update failed', { cause: error });
+  }
+}
+
+const reference = (prefix: string) => `${prefix}-${new Date().getUTCFullYear()}-${randomBytes(5).toString('hex').toUpperCase()}`;
+
 async function audit(entityId: string, action: string, actor: Actor, previousValue: unknown, newValue: unknown, correlationId: string) {
   const { errors } = await client.models.AuditEvent.create({
     entityType: 'claim', entityId, action, actorSubject: actor.subject, actorGroups: actor.groups,
@@ -74,19 +124,19 @@ async function getClaim(claimId: string) {
 async function canAccessClaim(actor: Actor, claim: any) {
   if (claim.owner === actor.subject || isSenior(actor)) return true;
   if (!isStaff(actor)) return false;
-  const assignments = await client.models.ClaimAssignment.list({
+  const assignments = await listAll(client.models.ClaimAssignment, {
     filter: { claimId: { eq: claim.id }, userSubject: { eq: actor.subject }, active: { eq: true } },
   });
   return assignments.data.length > 0;
 }
 
 async function autoAssignLead(claim: any, actor: Actor, correlationId: string) {
-  const profiles = await client.models.UserProfile.list({ filter: { status: { eq: 'active' } } });
+  const profiles = await listAll(client.models.UserProfile, { filter: { status: { eq: 'active' } } });
   const eligible = profiles.data.filter((profile: any) =>
     ['junior_officer', 'intermediate_officer', 'senior_officer'].includes(profile.businessRole));
   if (!eligible.length) return null;
   const loads = await Promise.all(eligible.map(async (profile: any) => {
-    const assignments = await client.models.ClaimAssignment.list({
+    const assignments = await listAll(client.models.ClaimAssignment, {
       filter: { userSubject: { eq: profile.owner }, active: { eq: true } },
     });
     return { profile, load: assignments.data.length };
@@ -94,6 +144,16 @@ async function autoAssignLead(claim: any, actor: Actor, correlationId: string) {
   loads.sort((left, right) => left.load - right.load || String(left.profile.owner).localeCompare(String(right.profile.owner)));
   const selected = loads[0].profile;
   const assignedAt = now();
+  // The scheduled assignment worker races this path; whoever moves the claim out of
+  // ASSIGNMENT_PENDING first owns the assignment, so there is only ever one lead.
+  try {
+    await updateIfStatus('Claim', CLAIM_FIELDS, {
+      id: claim.id, assignedOfficerId: selected.owner, status: 'VALIDATING',
+      currentMilestone: 'VALIDATING', lastActivityAt: assignedAt,
+    }, 'ASSIGNMENT_PENDING');
+  } catch {
+    return null;
+  }
   const result = await client.models.ClaimAssignment.create({
     claimId: claim.id, claimOwner: claim.owner, userSubject: selected.owner,
     userDisplayNameSnapshot: selected.displayName ?? selected.email,
@@ -101,13 +161,7 @@ async function autoAssignLead(claim: any, actor: Actor, correlationId: string) {
     active: true, assignedAt, assignedBy: actor.subject, correlationId,
   });
   if (result.errors?.length || !result.data) throw new Error(result.errors?.[0]?.message ?? 'Advisor assignment failed');
-  await client.models.Claim.update({
-    id: claim.id, assignedOfficerId: selected.owner, status: 'VALIDATING',
-    currentMilestone: 'VALIDATING', lastActivityAt: assignedAt,
-  });
-  await activity(claim, 'ADVISOR_ASSIGNED', 'VALIDATING', `${selected.displayName ?? 'An advisor'} is now leading your claim.`, {
-    subject: selected.owner, groups: [selected.businessRole], displayName: selected.displayName ?? selected.email, email: selected.email, role: selected.businessRole,
-  }, correlationId);
+  await activity(claim, 'ADVISOR_ASSIGNED', 'VALIDATING', `${selected.displayName ?? 'An advisor'} is now leading your claim.`, actor, correlationId);
   return result.data;
 }
 
@@ -128,7 +182,7 @@ export const handler = async (event: ResolverEvent) => {
   if (event.fieldName === 'getAssetCategoryDefinitions') return categoryDefinitions;
 
   if (event.fieldName === 'searchAssets') {
-    const result = await client.models.Asset.list({});
+    const result = await listAll(client.models.Asset, {});
     const query = String(args.query ?? '').trim().toLowerCase();
     const filters = (args.filters ?? {}) as Record<string, unknown>;
     let items = result.data.filter((item: any) => (item.owner === actor.subject || isSenior(actor)) &&
@@ -152,7 +206,7 @@ export const handler = async (event: ResolverEvent) => {
     const assetType = String(args.assetType);
     if (!categoryDefinitions[assetType]) throw new Error('Unsupported asset category');
     const key = String(args.idempotencyKey);
-    const prior = await client.models.PolicyApplication.list({ filter: { idempotencyKey: { eq: key } } });
+    const prior = await listAll(client.models.PolicyApplication, { filter: { idempotencyKey: { eq: key }, owner: { eq: actor.subject } } });
     if (prior.data[0]) return prior.data[0];
     const result = await client.models.PolicyApplication.create({
       owner: actor.subject, assetType, schemaVersion: ASSET_SCHEMA_VERSION, status: 'DRAFT',
@@ -182,8 +236,8 @@ export const handler = async (event: ResolverEvent) => {
     const answers = application.data.answers as Record<string, unknown>;
     const missing = validateApplication(application.data.assetType, answers);
     if (event.fieldName === 'submitAssetApplication') {
-      const documents = await client.models.ApplicationDocument.list({ filter: { applicationId: { eq: application.data.id } } });
-      if (!documents.data.some((document: any) => document.category === 'VALUATION' && ['QUARANTINED', 'SCANNING', 'CLEAN', 'EXTRACTED'].includes(document.status))) {
+      const documents = await listAll(client.models.ApplicationDocument, { filter: { applicationId: { eq: application.data.id } } });
+      if (!documents.data.some((document: any) => document.category === 'VALUATION' && ACCEPTED_DOCUMENT_STATES.includes(document.status))) {
         missing.push('Purchase invoice or valuation document');
       }
     }
@@ -192,10 +246,10 @@ export const handler = async (event: ResolverEvent) => {
       throw new Error(`Complete these fields: ${missing.join(', ')}`);
     }
     const key = String(args.idempotencyKey);
-    const existingAssessment = await client.models.PremiumAssessment.list({ filter: { idempotencyKey: { eq: key } } });
+    const existingAssessment = await listAll(client.models.PremiumAssessment, { filter: { idempotencyKey: { eq: key }, owner: { eq: application.data.owner } } });
     let assessment = existingAssessment.data[0];
     if (!assessment) {
-      const profileHistory = await client.models.UnderwritingProfile.list({ filter: { owner: { eq: application.data.owner } } });
+      const profileHistory = await listAll(client.models.UnderwritingProfile, { filter: { owner: { eq: application.data.owner } } });
       const profile = await client.models.UnderwritingProfile.create({
         owner: application.data.owner, version: profileHistory.data.length + 1, consentGiven: true, consentedAt: now(),
         declarations: answers, createdAtSnapshot: now(),
@@ -235,7 +289,7 @@ export const handler = async (event: ResolverEvent) => {
       schemaVersion: application.data.schemaVersion, answers, completedSections: application.data.completedSections,
       createdAtSnapshot: registeredAt,
     });
-    const applicationNumber = `EIA-${new Date().getUTCFullYear()}-${Date.now().toString().slice(-8)}`;
+    const applicationNumber = reference('EIA');
     const submitted = await client.models.PolicyApplication.update({
       id: application.data.id, applicationNumber, assetId: asset.data.id, status: 'SUBMITTED',
       submittedAt: registeredAt, missingInformation: [], lastUpdatedAt: registeredAt,
@@ -266,8 +320,12 @@ export const handler = async (event: ResolverEvent) => {
     }
     const premium = Number(args.monthlyPremium);
     if (!Number.isFinite(premium) || premium <= 0) throw new Error('A positive monthly premium is required');
+    if (!['SUBMITTED', 'UNDER_REVIEW'].includes(application.data.status)) throw new Error('Only submitted applications can be quoted');
+    const valuation = await listAll(client.models.ApplicationDocument, { filter: { applicationId: { eq: application.data.id }, category: { eq: 'VALUATION' }, status: { eq: 'CLEAN' } } });
+    if (!valuation.data.length) throw new Error('The valuation document must pass security scanning before a quote is issued');
     const latest = application.data.latestAssessmentId ? await client.models.PremiumAssessment.get({ id: application.data.latestAssessmentId }) : null;
-    const indicative = latest?.data?.indicativePremium ?? premium;
+    if (!latest?.data) throw new Error('An indicative premium assessment is required before quoting');
+    const indicative = latest.data.indicativePremium;
     if (Math.abs(premium - indicative) > indicative * 0.1 && !String(args.overrideReason ?? '').trim()) throw new Error('An override reason is required outside the indicative range');
     const result = await client.models.PolicyApplication.update({
       id: application.data.id, status: 'QUOTED', quotedPremium: premium,
@@ -283,16 +341,20 @@ export const handler = async (event: ResolverEvent) => {
     if (application.data.status !== 'QUOTED' || !application.data.assetId || !application.data.quotedPremium) throw new Error('No active quote is available');
     if (application.data.quoteExpiresAt && application.data.quoteExpiresAt < now()) throw new Error('The quote has expired');
     const acceptedAt = now();
+    // Claim the quote first so a double-click or retry cannot create two policies.
+    await updateIfStatus('PolicyApplication', APPLICATION_FIELDS, { id: application.data.id, status: 'ACCEPTED', acceptedAt, lastUpdatedAt: acceptedAt }, 'QUOTED');
     const policy = await client.models.Policy.create({
-      owner: actor.subject, policyNumber: `EIP-${new Date().getUTCFullYear()}-${Date.now().toString().slice(-8)}`,
+      owner: actor.subject, policyNumber: reference('EIP'),
       valuationType: 'ACTUAL_CASH_VALUE', coverageDetails: 'Comprehensive cover subject to the accepted quote and policy schedule.',
       durationMonths: 12, startDate: acceptedAt, endDate: new Date(Date.now() + 365 * 86400_000).toISOString(),
       status: 'ACTIVE', suggestedPremium: application.data.quotedPremium, approvedPremium: application.data.quotedPremium,
       approvedBy: 'underwriting', approvalTimestamp: acceptedAt,
     });
-    if (policy.errors?.length || !policy.data) throw new Error(policy.errors?.[0]?.message ?? 'Policy activation failed');
+    if (policy.errors?.length || !policy.data) {
+      await client.models.PolicyApplication.update({ id: application.data.id, status: 'QUOTED', acceptedAt: null, lastUpdatedAt: now() });
+      throw new Error(policy.errors?.[0]?.message ?? 'Policy activation failed');
+    }
     await client.models.Asset.update({ id: application.data.assetId, policyId: policy.data.id, status: 'INSURABLE', lastUpdatedAt: acceptedAt });
-    await client.models.PolicyApplication.update({ id: application.data.id, status: 'ACCEPTED', acceptedAt, lastUpdatedAt: acceptedAt });
     await audit(application.data.id, 'policy_quote_accepted', actor, { status: 'QUOTED' }, { status: 'ACCEPTED', policyId: policy.data.id }, correlationId);
     return policy.data;
   }
@@ -302,7 +364,7 @@ export const handler = async (event: ResolverEvent) => {
       claims: event.identity?.claims, email: args.email, displayName: args.displayName, subject: actor.subject,
     });
     const resolvedIsReal = !resolved.email.endsWith('@profile.invalid');
-    const existing = await client.models.UserProfile.list({ filter: { owner: { eq: actor.subject } } });
+    const existing = await listAll(client.models.UserProfile, { filter: { owner: { eq: actor.subject } } });
     const role = ['client', ...staffGroups].includes(actor.role) ? actor.role : 'client';
     if (existing.data[0]) {
       const current = existing.data[0];
@@ -325,29 +387,95 @@ export const handler = async (event: ResolverEvent) => {
     return result.data;
   }
 
+  if (event.fieldName === 'updateMyProfile') {
+    const displayName = clean(args.displayName, 'displayName', 2).slice(0, 80);
+    const existing = await listAll(client.models.UserProfile, { filter: { owner: { eq: actor.subject } } });
+    if (!existing.data[0]) throw new Error('Profile provisioning is still in progress');
+    const updated = await client.models.UserProfile.update({ id: existing.data[0].id, displayName });
+    if (updated.errors?.length || !updated.data) throw new Error(updated.errors?.[0]?.message ?? 'Profile update failed');
+    return updated.data;
+  }
+
+  if (event.fieldName === 'registerClaimDocument' || event.fieldName === 'registerApplicationDocument') {
+    const forClaim = event.fieldName === 'registerClaimDocument';
+    const parentId = clean(forClaim ? args.claimId : args.applicationId, forClaim ? 'claimId' : 'applicationId');
+    const objectKey = clean(args.objectKey, 'objectKey');
+    const parsed = parseQuarantineKey(objectKey);
+    if (!parsed || parsed.kind !== (forClaim ? 'claim' : 'application') || parsed.parentId !== parentId) {
+      throw new Error('The upload location does not match this record');
+    }
+    const mediaType = String(args.mediaType);
+    const byteSize = Number(args.byteSize);
+    const checksum = String(args.checksum).toLowerCase();
+    if (!ALLOWED_MEDIA_TYPES.includes(mediaType)) throw new Error('Documents must be PDF, JPEG or PNG');
+    if (!Number.isInteger(byteSize) || byteSize <= 0 || byteSize > MAX_DOCUMENT_BYTES) throw new Error('Documents must be under 10 MB');
+    if (!/^[a-f0-9]{64}$/.test(checksum)) throw new Error('A SHA-256 checksum is required');
+    const category = String(args.category).toUpperCase();
+    const fileName = clean(args.fileName, 'fileName').slice(0, 200);
+    if (forClaim) {
+      if (!['AFFIDAVIT', 'INCIDENT_EVIDENCE', 'IDENTITY', 'VALUATION', 'CORRESPONDENCE', 'OTHER'].includes(category)) throw new Error('Unsupported document category');
+      const claim = await getClaim(parentId);
+      if (claim.owner !== actor.subject) throw new Error('Claim not found');
+      if (!['DRAFT', 'ASSIGNMENT_PENDING', 'VALIDATING', 'INFO_NEEDED', 'UNDER_ASSESSMENT'].includes(claim.status)) throw new Error('Documents can no longer be added to this claim');
+      const prior = await listAll(client.models.ClaimDocument, { filter: { objectKey: { eq: objectKey }, owner: { eq: actor.subject } } });
+      if (prior.data[0]) return prior.data[0];
+      const result = await client.models.ClaimDocument.create({
+        owner: actor.subject, claimId: parentId, objectKey, fileName, mediaType, byteSize, checksum,
+        status: 'QUARANTINED', uploadedBy: actor.subject, category, visibility: 'CLIENT_VISIBLE',
+      });
+      if (result.errors?.length || !result.data) throw new Error(result.errors?.[0]?.message ?? 'Document registration failed');
+      await audit(parentId, 'document_registered', actor, null, { documentId: result.data.id, category }, correlationId);
+      return result.data;
+    }
+    if (category !== 'VALUATION') throw new Error('Unsupported document category');
+    const application = await client.models.PolicyApplication.get({ id: parentId });
+    if (!application.data || application.data.owner !== actor.subject) throw new Error('Application not found');
+    if (!['DRAFT', 'MORE_INFO_REQUIRED'].includes(application.data.status)) throw new Error('This application is read-only');
+    const prior = await listAll(client.models.ApplicationDocument, { filter: { objectKey: { eq: objectKey }, owner: { eq: actor.subject } } });
+    if (prior.data[0]) return prior.data[0];
+    const result = await client.models.ApplicationDocument.create({
+      owner: actor.subject, applicationId: parentId, category, objectKey, fileName, mediaType, byteSize, checksum,
+      status: 'QUARANTINED', uploadedAt: now(),
+    });
+    if (result.errors?.length || !result.data) throw new Error(result.errors?.[0]?.message ?? 'Document registration failed');
+    return result.data;
+  }
+
   if (event.fieldName === 'getAssignedCasePortfolio') {
     requireStaff(actor);
-    if (isSenior(actor) || isDeveloper(actor)) {
+    if (isDeveloper(actor) && !isSenior(actor)) {
+      // Diagnostics only: workflow state without client narrative, documents or messages (POPIA minimisation).
+      const claims = await listAll(client.models.Claim, {});
+      const diagnostics = claims.data.map((claim: any) => ({
+        id: claim.id, claimNumber: claim.claimNumber, status: claim.status, currentMilestone: claim.currentMilestone,
+        tier: claim.tier, assignedOfficerId: claim.assignedOfficerId, submittedAt: claim.submittedAt,
+        lastActivityAt: claim.lastActivityAt, assignmentDueAt: claim.assignmentDueAt, createdAt: claim.createdAt,
+        owner: 'redacted', policyId: claim.policyId, assetId: claim.assetId, claimType: claim.claimType,
+        description: 'Redacted for diagnostics', incidentDate: claim.incidentDate,
+      }));
+      return { claims: diagnostics, assignments: [], activities: [], communications: [], documents: [], internalNotes: [], assets: [], policies: [], claimAssessments: [] };
+    }
+    if (isSenior(actor)) {
       const [claims, assignments, activities, communications, documents, notes, assets, policies, assessments] = await Promise.all([
-        client.models.Claim.list({}), client.models.ClaimAssignment.list({}), client.models.ClaimActivity.list({}),
-        client.models.ClaimCommunication.list({}), client.models.ClaimDocument.list({}), client.models.ClaimInternalNote.list({}),
-        client.models.Asset.list({}), client.models.Policy.list({}), client.models.ClaimAssessment.list({}),
+        listAll(client.models.Claim, {}), listAll(client.models.ClaimAssignment, {}), listAll(client.models.ClaimActivity, {}),
+        listAll(client.models.ClaimCommunication, {}), listAll(client.models.ClaimDocument, {}), listAll(client.models.ClaimInternalNote, {}),
+        listAll(client.models.Asset, {}), listAll(client.models.Policy, {}), listAll(client.models.ClaimAssessment, {}),
       ]);
       return { claims: claims.data, assignments: assignments.data, activities: activities.data, communications: communications.data, documents: documents.data, internalNotes: notes.data, assets: assets.data, policies: policies.data, claimAssessments: assessments.data };
     }
-    const assignmentResult = await client.models.ClaimAssignment.list({
+    const assignmentResult = await listAll(client.models.ClaimAssignment, {
       filter: { userSubject: { eq: actor.subject }, active: { eq: true } },
     });
     const claimIds = [...new Set(assignmentResult.data.map((item: any) => item.claimId))] as string[];
     const bundles = await Promise.all(claimIds.map(async (claimId) => {
       const [claim, activities, communications, documents, notes, team, assessments] = await Promise.all([
         client.models.Claim.get({ id: claimId }),
-        client.models.ClaimActivity.list({ filter: { claimId: { eq: claimId } } }),
-        client.models.ClaimCommunication.list({ filter: { claimId: { eq: claimId } } }),
-        client.models.ClaimDocument.list({ filter: { claimId: { eq: claimId } } }),
-        client.models.ClaimInternalNote.list({ filter: { claimId: { eq: claimId } } }),
-        client.models.ClaimAssignment.list({ filter: { claimId: { eq: claimId } } }),
-        client.models.ClaimAssessment.list({ filter: { claimId: { eq: claimId } } }),
+        listAll(client.models.ClaimActivity, { filter: { claimId: { eq: claimId } } }),
+        listAll(client.models.ClaimCommunication, { filter: { claimId: { eq: claimId } } }),
+        listAll(client.models.ClaimDocument, { filter: { claimId: { eq: claimId } } }),
+        listAll(client.models.ClaimInternalNote, { filter: { claimId: { eq: claimId } } }),
+        listAll(client.models.ClaimAssignment, { filter: { claimId: { eq: claimId } } }),
+        listAll(client.models.ClaimAssessment, { filter: { claimId: { eq: claimId } } }),
       ]);
       const [asset, policy] = claim.data ? await Promise.all([
         client.models.Asset.get({ id: claim.data.assetId }), client.models.Policy.get({ id: claim.data.policyId }),
@@ -369,7 +497,7 @@ export const handler = async (event: ResolverEvent) => {
 
   if (event.fieldName === 'createClaimDraft') {
     const key = clean(args.idempotencyKey, 'idempotencyKey');
-    const existing = await client.models.Claim.list({ filter: { idempotencyKey: { eq: key } } });
+    const existing = await listAll(client.models.Claim, { filter: { idempotencyKey: { eq: key }, owner: { eq: actor.subject } } });
     if (existing.data[0]) return existing.data[0];
     const [asset, policy] = await Promise.all([
       client.models.Asset.get({ id: String(args.assetId) }), client.models.Policy.get({ id: String(args.policyId) }),
@@ -394,7 +522,7 @@ export const handler = async (event: ResolverEvent) => {
 
   if (event.fieldName === 'requestAccountClosure') {
     const key = clean(args.idempotencyKey, 'idempotencyKey');
-    const existing = await client.models.AccountClosureRequest.list({ filter: { correlationId: { eq: key } } });
+    const existing = await listAll(client.models.AccountClosureRequest, { filter: { correlationId: { eq: key }, owner: { eq: actor.subject } } });
     if (existing.data[0]) return existing.data[0];
     const requestedAt = now();
     const result = await client.models.AccountClosureRequest.create({
@@ -402,17 +530,17 @@ export const handler = async (event: ResolverEvent) => {
       retentionPolicyVersion: 'ACTIVE-ACCOUNT-LIFETIME-v1', correlationId: key,
     });
     if (result.errors?.length || !result.data) throw new Error(result.errors?.[0]?.message ?? 'Account closure request failed');
-    const profiles = await client.models.UserProfile.list({ filter: { owner: { eq: actor.subject } } });
+    const profiles = await listAll(client.models.UserProfile, { filter: { owner: { eq: actor.subject } } });
     const suffix = createHash('sha256').update(actor.subject).digest('hex').slice(0, 16);
     await Promise.all(profiles.data.map((profile: any) => client.models.UserProfile.update({
       id: profile.id, displayName: 'Former client', email: `closed+${suffix}@redacted.invalid`, status: 'disabled',
     })));
-    const claims = await client.models.Claim.list({ filter: { owner: { eq: actor.subject } } });
+    const claims = await listAll(client.models.Claim, { filter: { owner: { eq: actor.subject } } });
     await Promise.all(claims.data.map(async (claim: any) => {
       const [activities, communications, calls] = await Promise.all([
-        client.models.ClaimActivity.list({ filter: { claimId: { eq: claim.id } } }),
-        client.models.ClaimCommunication.list({ filter: { claimId: { eq: claim.id } } }),
-        client.models.CallRecord.list({ filter: { claimId: { eq: claim.id } } }),
+        listAll(client.models.ClaimActivity, { filter: { claimId: { eq: claim.id } } }),
+        listAll(client.models.ClaimCommunication, { filter: { claimId: { eq: claim.id } } }),
+        listAll(client.models.CallRecord, { filter: { claimId: { eq: claim.id } } }),
       ]);
       await Promise.all([
         ...activities.data.filter((item: any) => item.actorSubject === actor.subject).map((item: any) =>
@@ -438,11 +566,11 @@ export const handler = async (event: ResolverEvent) => {
     if (claim.owner !== actor.subject) throw new Error('Only the owner can submit this draft');
     if (claim.status !== 'DRAFT' && claim.claimNumber) return claim;
     if (claim.status !== 'DRAFT') throw new Error('The claim cannot be submitted from its current state');
-    const documents = await client.models.ClaimDocument.list({ filter: { claimId: { eq: claim.id }, category: { eq: 'AFFIDAVIT' } } });
+    const documents = await listAll(client.models.ClaimDocument, { filter: { claimId: { eq: claim.id }, category: { eq: 'AFFIDAVIT' } } });
     const prerequisites = validateDraftPrerequisites(claim.policeCaseNumber, documents.data);
     if (!prerequisites.valid) throw new Error(prerequisites.reason ?? 'Claim draft is incomplete');
     const submittedAt = now();
-    const claimNumber = `EIC-${new Date().getUTCFullYear()}-${Date.now().toString().slice(-8)}`;
+    const claimNumber = reference('EIC');
     const result = await client.models.Claim.update({
       id: claim.id, claimNumber, status: 'ASSIGNMENT_PENDING', currentMilestone: 'ASSIGNMENT_PENDING',
       submittedAt, lastActivityAt: submittedAt, assignmentDueAt: new Date(Date.now() + 15 * 60_000).toISOString(),
@@ -461,7 +589,7 @@ export const handler = async (event: ResolverEvent) => {
     requireCaseOfficer(actor);
     const claim = await getClaim(String(args.claimId));
     if (!(await canAccessClaim(actor, claim))) throw new Error('Claim assignment access required');
-    const duplicate = await client.models.ClaimInternalNote.list({ filter: { correlationId: { eq: String(args.idempotencyKey) } } });
+    const duplicate = await listAll(client.models.ClaimInternalNote, { filter: { correlationId: { eq: String(args.idempotencyKey) } } });
     if (duplicate.data[0]) return duplicate.data[0];
     const result = await client.models.ClaimInternalNote.create({
       claimId: claim.id, authorSubject: actor.subject, authorDisplayNameSnapshot: actor.displayName,
@@ -481,7 +609,7 @@ export const handler = async (event: ResolverEvent) => {
     if (!['PORTAL', 'EMAIL', 'SMS', 'WHATSAPP'].includes(channel)) throw new Error('Unsupported communication channel');
     if (!isStaff(actor) && channel !== 'PORTAL') throw new Error('Clients reply through the secure portal');
     const key = clean(args.idempotencyKey, 'idempotencyKey');
-    const existing = await client.models.ClaimCommunication.list({ filter: { idempotencyKey: { eq: key } } });
+    const existing = await listAll(client.models.ClaimCommunication, { filter: { idempotencyKey: { eq: key }, senderSubject: { eq: actor.subject } } });
     if (existing.data[0]) return existing.data[0];
     const occurredAt = now();
     const result = await client.models.ClaimCommunication.create({
@@ -560,14 +688,14 @@ export const handler = async (event: ResolverEvent) => {
     requireSenior(actor);
     const claim = await getClaim(String(args.claimId));
     const userSubject = clean(args.userSubject, 'userSubject');
-    const profiles = await client.models.UserProfile.list({ filter: { owner: { eq: userSubject } } });
+    const profiles = await listAll(client.models.UserProfile, { filter: { owner: { eq: userSubject } } });
     const profile = profiles.data.find((item: any) => item.status === 'active' && item.businessRole !== 'client');
     if (!profile) throw new Error('The selected case-team member is not an active officer');
     const key = clean(args.idempotencyKey, 'idempotencyKey');
-    const prior = await client.models.ClaimAssignment.list({ filter: { correlationId: { eq: key } } });
+    const prior = await listAll(client.models.ClaimAssignment, { filter: { correlationId: { eq: key } } });
     if (prior.data[0]) return prior.data[0];
     if (args.isLead) {
-      const active = await client.models.ClaimAssignment.list({ filter: { claimId: { eq: claim.id }, isLead: { eq: true }, active: { eq: true } } });
+      const active = await listAll(client.models.ClaimAssignment, { filter: { claimId: { eq: claim.id }, isLead: { eq: true }, active: { eq: true } } });
       await Promise.all(active.data.map((item: any) => client.models.ClaimAssignment.update({
         id: item.id, active: false, endedAt: now(), endedBy: actor.subject,
       })));
@@ -605,14 +733,14 @@ export const handler = async (event: ResolverEvent) => {
     const claim = await getClaim(String(args.claimId));
     if (!(await canAccessClaim(actor, claim))) throw new Error('Claim assignment access required');
     const target = event.fieldName === 'closeClaim' ? 'CLOSED' : String(args.targetStatus);
-    if (!canTransition(claim.status, target)) throw new Error(`Claim cannot move from ${claim.status} to ${target}`);
-    if (['APPROVED', 'REJECTED'].includes(target)) requireSenior(actor);
+    if (!canManuallyTransition(claim.status, target)) throw new Error(`Claim cannot move from ${claim.status} to ${target}`);
+    if (target === 'PAYMENT_PENDING') requireSenior(actor);
     const changedAt = now();
-    const result = await client.models.Claim.update({
+    const updated = await updateIfStatus('Claim', CLAIM_FIELDS, {
       id: claim.id, status: target, currentMilestone: target, lastActivityAt: changedAt,
-      closedAt: target === 'CLOSED' ? changedAt : undefined,
-    });
-    if (result.errors?.length || !result.data) throw new Error(result.errors?.[0]?.message ?? 'Claim transition failed');
+      ...(target === 'CLOSED' ? { closedAt: changedAt } : {}),
+    }, claim.status);
+    const result = { data: updated };
     await activity(result.data, 'STATUS_CHANGED', target, clean(args.summary, 'summary', 2), actor, correlationId, args.detail ? String(args.detail) : undefined);
     await audit(claim.id, 'status_changed', actor, { status: claim.status }, { status: target }, correlationId);
     return result.data;
@@ -623,7 +751,7 @@ export const handler = async (event: ResolverEvent) => {
     const assessmentClaim = await getClaim(String(args.claimId));
     if (!(await canAccessClaim(actor, assessmentClaim))) throw new Error('Claim assignment access required');
     if (assessmentClaim.status !== 'UNDER_ASSESSMENT') throw new Error('Claim must be under assessment');
-    const cleanEvidence = await client.models.ClaimDocument.list({ filter: { claimId: { eq: assessmentClaim.id }, status: { eq: 'CLEAN' } } });
+    const cleanEvidence = await listAll(client.models.ClaimDocument, { filter: { claimId: { eq: assessmentClaim.id }, status: { eq: 'CLEAN' } } });
     const reviewed = (args.evidenceReviewed as string[]).map(String);
     if (!reviewed.length || reviewed.some((id) => !cleanEvidence.data.some((document: any) => document.id === id))) throw new Error('Only clean claim evidence can support an assessment');
     const number = (name: string, optional = false) => {
@@ -638,9 +766,9 @@ export const handler = async (event: ResolverEvent) => {
       excess: number('excess')!, depreciation,
     };
     const key = String(args.idempotencyKey);
-    const prior = await client.models.ClaimAssessment.list({ filter: { idempotencyKey: { eq: key } } });
+    const prior = await listAll(client.models.ClaimAssessment, { filter: { idempotencyKey: { eq: key } } });
     if (prior.data[0]) return prior.data[0];
-    const history = await client.models.ClaimAssessment.list({ filter: { claimId: { eq: assessmentClaim.id } } });
+    const history = await listAll(client.models.ClaimAssessment, { filter: { claimId: { eq: assessmentClaim.id } } });
     const recommendedPayout = calculateRecommendedPayout(input);
     const result = await client.models.ClaimAssessment.create({
       claimId: assessmentClaim.id, claimOwner: assessmentClaim.owner, version: history.data.length + 1,
@@ -658,15 +786,21 @@ export const handler = async (event: ResolverEvent) => {
     requireSenior(actor);
     const assessment = await client.models.ClaimAssessment.get({ id: String(args.assessmentId) });
     if (!assessment.data) throw new Error('Assessment not found');
+    if (assessment.data.status !== 'DRAFT') throw new Error('This assessment has already been finalized');
+    const claimBeforeFinalize = await getClaim(assessment.data.claimId);
+    if (claimBeforeFinalize.status !== 'UNDER_ASSESSMENT') throw new Error('Claim must be under assessment');
+    if (claimBeforeFinalize.owner === actor.subject) throw new Error('You cannot finalize an assessment on your own claim');
     const override = args.overridePayout === undefined || args.overridePayout === null ? undefined : Number(args.overridePayout);
     if (override !== undefined && (!Number.isFinite(override) || override < 0)) throw new Error('overridePayout must be non-negative');
     if (override !== undefined && override !== assessment.data.recommendedPayout && !String(args.overrideReason ?? '').trim()) throw new Error('An override reason is required');
     const payout = override ?? assessment.data.recommendedPayout;
-    const result = await client.models.ClaimAssessment.update({
+    if (payout > assessment.data.policyLimit) throw new Error('The payout cannot exceed the policy limit');
+    const finalized = await updateIfStatus('ClaimAssessment', ASSESSMENT_FIELDS, {
       id: assessment.data.id, recommendedPayout: payout, overrideReason: args.overrideReason ? String(args.overrideReason) : undefined,
-      status: 'FINALIZED', finalizedAt: now(),
-    });
-    await client.models.Claim.update({ id: assessment.data.claimId, suggestedPayout: payout, status: 'DECISION_PENDING', currentMilestone: 'DECISION_PENDING', lastActivityAt: now() });
+      status: 'FINALIZED', finalizedAt: now(), finalizedBySubject: actor.subject,
+    }, 'DRAFT');
+    const result = { data: finalized };
+    await updateIfStatus('Claim', CLAIM_FIELDS, { id: assessment.data.claimId, suggestedPayout: payout, status: 'DECISION_PENDING', currentMilestone: 'DECISION_PENDING', lastActivityAt: now() }, 'UNDER_ASSESSMENT');
     const assessmentClaim = await getClaim(assessment.data.claimId);
     await activity(assessmentClaim, 'ASSESSMENT_COMPLETED', 'DECISION_PENDING', 'Evidence review is complete and the payout recommendation awaits a human decision.', actor, correlationId);
     await audit(assessment.data.claimId, 'claim_assessment_finalized', actor, { recommendedPayout: assessment.data.recommendedPayout }, { payout, overrideReason: args.overrideReason }, correlationId);
@@ -681,19 +815,27 @@ export const handler = async (event: ResolverEvent) => {
     if (!(await canAccessClaim(actor, claim))) throw new Error('Claim assignment access required');
     if (claim.status !== 'VALIDATING' && claim.status !== 'FAILED') throw new Error('Claim cannot be started from its current state');
     const key = String(args.idempotencyKey);
-    const prior = await client.models.ProcessingJob.list({ filter: { correlationId: { eq: key } } });
+    const prior = await listAll(client.models.ProcessingJob, { filter: { correlationId: { eq: key } } });
     if (prior.data[0]) return prior.data[0];
-    const affidavit = await client.models.ClaimDocument.list({ filter: { claimId: { eq: claim.id }, category: { eq: 'AFFIDAVIT' }, status: { eq: 'CLEAN' } } });
+    const affidavit = await listAll(client.models.ClaimDocument, { filter: { claimId: { eq: claim.id }, category: { eq: 'AFFIDAVIT' }, status: { eq: 'CLEAN' } } });
     if (!affidavit.data.length) throw new Error('The police affidavit must pass security scanning before assessment');
     const job = await client.models.ProcessingJob.create({ claimId, status: 'QUEUED', currentStep: 'queued', attempts: 0, correlationId: key });
     if (job.errors?.length || !job.data) throw new Error(job.errors?.[0]?.message ?? 'Job creation failed');
-    await client.models.Claim.update({ id: claimId, status: 'UNDER_ASSESSMENT', currentMilestone: 'UNDER_ASSESSMENT' });
     const stateMachineArn = process.env.CLAIMS_STATE_MACHINE_ARN;
     if (!stateMachineArn) throw new Error('Claims workflow is not configured');
-    const execution = await stepFunctions.send(new StartExecutionCommand({
-      stateMachineArn, name: `claim-${claimId}-${key}`.replace(/[^A-Za-z0-9-_]/g, '').slice(0, 80),
-      input: JSON.stringify({ claimId, jobId: job.data.id, correlationId }),
-    }));
+    await updateIfStatus('Claim', CLAIM_FIELDS, { id: claimId, status: 'UNDER_ASSESSMENT', currentMilestone: 'UNDER_ASSESSMENT' }, claim.status);
+    let execution;
+    try {
+      execution = await stepFunctions.send(new StartExecutionCommand({
+        stateMachineArn, name: `claim-${claimId}-${key}`.replace(/[^A-Za-z0-9-_]/g, '').slice(0, 80),
+        input: JSON.stringify({ claimId, jobId: job.data.id, correlationId }),
+      }));
+    } catch (error) {
+      // Don't leave the claim stranded in UNDER_ASSESSMENT with no workflow behind it.
+      await client.models.Claim.update({ id: claimId, status: claim.status, currentMilestone: claim.currentMilestone ?? claim.status });
+      await client.models.ProcessingJob.update({ id: job.data.id, status: 'FAILED', currentStep: 'start', errorCategory: 'START_EXECUTION', errorMessage: String(error).slice(0, 500) });
+      throw new Error('The assessment workflow could not be started. Please try again.', { cause: error });
+    }
     await client.models.ProcessingJob.update({ id: job.data.id, executionArn: execution.executionArn });
     await activity(claim, 'ASSESSMENT_STARTED', 'UNDER_ASSESSMENT', 'Your claim assessment has started.', actor, correlationId);
     await audit(claimId, 'processing_started', actor, { status: claim.status }, { status: 'UNDER_ASSESSMENT', jobId: job.data.id }, correlationId);
@@ -702,21 +844,48 @@ export const handler = async (event: ResolverEvent) => {
 
   if (event.fieldName === 'approveClaim' || event.fieldName === 'rejectClaim') {
     requireSenior(actor);
-    if (claim.status !== 'DECISION_PENDING') throw new Error('Only claims awaiting a decision can be approved or rejected');
     const approved = event.fieldName === 'approveClaim';
+    const target = approved ? 'APPROVED' : 'REJECTED';
+    // A retried request from the same officer returns the decision already made.
+    if (claim.status === target && claim.approvedBy === actor.subject) return claim;
+    if (claim.status !== 'DECISION_PENDING') throw new Error('Only claims awaiting a decision can be approved or rejected');
     const payout = approved ? Number(args.approvedPayout) : 0;
     if (!Number.isFinite(payout) || payout < 0) throw new Error('approvedPayout must be non-negative');
     if (approved && payout !== claim.suggestedPayout && !String(args.overrideReason ?? '').trim()) throw new Error('An override reason is required when changing the assessed payout');
     const reason = approved ? undefined : clean(args.reason, 'reason', 5);
-    const target = approved ? 'APPROVED' : 'REJECTED';
-    const result = await client.models.Claim.update({
+    const assessments = await listAll(client.models.ClaimAssessment, { filter: { claimId: { eq: claim.id }, status: { eq: 'FINALIZED' } } });
+    const assessment = assessments.data.sort((left: any, right: any) => right.version - left.version)[0];
+    assertDecisionAuthority({ actorSubject: actor.subject, actorGroups: actor.groups, claimOwner: claim.owner, payout, assessment });
+    const decidedAt = now();
+    const updated = await updateIfStatus('Claim', CLAIM_FIELDS, {
       id: claim.id, status: target, currentMilestone: target, approvedPayout: payout,
-      approvedBy: actor.subject, approvalTimestamp: now(), lastActivityAt: now(),
-    });
-    if (result.errors?.length || !result.data) throw new Error(result.errors?.[0]?.message ?? 'Decision failed');
+      approvedBy: actor.subject, approvalTimestamp: decidedAt, lastActivityAt: decidedAt,
+    }, 'DECISION_PENDING');
+    const result = { data: updated };
     await activity(result.data, approved ? 'CLAIM_APPROVED' : 'CLAIM_REJECTED', target, approved ? 'Your claim was approved.' : `Your claim was not approved: ${reason}`, actor, correlationId);
-    await audit(claim.id, approved ? 'approved' : 'rejected', actor, { status: claim.status }, { status: target, approvedPayout: payout, reason, overrideReason: args.overrideReason }, correlationId);
+    await audit(claim.id, approved ? 'approved' : 'rejected', actor, { status: claim.status }, { status: target, approvedPayout: payout, reason, overrideReason: args.overrideReason, assessmentId: assessment.id, idempotencyKey: args.idempotencyKey }, correlationId);
     return result.data;
+  }
+
+  // Explicit, audited payment confirmation replaces the free "mark as paid" transition.
+  // Until a payment rail is integrated this records the bank/EFT reference supplied by finance.
+  if (event.fieldName === 'recordClaimPayout') {
+    requireSenior(actor);
+    if (claim.status === 'PAID') return claim;
+    if (claim.status !== 'PAYMENT_PENDING') throw new Error('Only claims awaiting payment can be marked as paid');
+    if (claim.owner === actor.subject) throw new Error('You cannot confirm payment on your own claim');
+    const paymentReference = clean(args.paymentReference, 'paymentReference', 4);
+    const paidAmount = Number(args.paidAmount);
+    if (!Number.isFinite(paidAmount) || Math.abs(paidAmount - Number(claim.approvedPayout ?? -1)) > 0.005) {
+      throw new Error('The paid amount must equal the approved payout');
+    }
+    const paidAt = now();
+    const updated = await updateIfStatus('Claim', CLAIM_FIELDS, {
+      id: claim.id, status: 'PAID', currentMilestone: 'PAID', lastActivityAt: paidAt,
+    }, 'PAYMENT_PENDING');
+    await activity(updated, 'PAYOUT_CONFIRMED', 'PAID', 'Your payout has been paid.', actor, correlationId);
+    await audit(claim.id, 'payout_confirmed', actor, { status: 'PAYMENT_PENDING' }, { status: 'PAID', paidAmount, paymentReference }, correlationId);
+    return updated;
   }
 
   if (event.fieldName === 'assignOfficer') {

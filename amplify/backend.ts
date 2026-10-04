@@ -1,8 +1,9 @@
 import { defineBackend } from '@aws-amplify/backend';
 import { Duration, RemovalPolicy, Stack, Token } from 'aws-cdk-lib';
 import { Alarm, ComparisonOperator, Metric, TreatMissingData } from 'aws-cdk-lib/aws-cloudwatch';
-import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
-import { CfnBucket } from 'aws-cdk-lib/aws-s3';
+import { PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
+import { Bucket, CfnBucket } from 'aws-cdk-lib/aws-s3';
+import { CfnMalwareProtectionPlan } from 'aws-cdk-lib/aws-guardduty';
 import { Function as LambdaFunction } from 'aws-cdk-lib/aws-lambda';
 import { Queue, QueueEncryption } from 'aws-cdk-lib/aws-sqs';
 import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
@@ -215,7 +216,51 @@ cfnBucket.lifecycleConfiguration = {
 // the storage stack while the onUpload trigger needs a live function-ARN token the other
 // way, reproducing the auth/function circular dependency fixed earlier this session.
 bucket.grantRead(backend.scanEvidence.resources.lambda, 'quarantine/*');
+bucket.grantDelete(backend.scanEvidence.resources.lambda, 'quarantine/*');
 bucket.grantWrite(backend.scanEvidence.resources.lambda, 'evidence/*');
+
+// GuardDuty Malware Protection for S3 scans every quarantine upload. scan-evidence only
+// promotes a file to evidence/ after the NO_THREATS_FOUND verdict arrives via EventBridge.
+// Everything lives in the storage stack for the same circular-dependency reason as above.
+const storageStack = Stack.of(bucket);
+(bucket as Bucket).enableEventBridgeNotification();
+const malwareScanRole = new Role(storageStack, 'MalwareProtectionRole', {
+  assumedBy: new ServicePrincipal('malware-protection-plan.guardduty.amazonaws.com'),
+});
+const managedRuleArn = storageStack.formatArn({ service: 'events', resource: 'rule', resourceName: 'DO-NOT-DELETE-AmazonGuardDutyMalwareProtectionS3*' });
+malwareScanRole.addToPolicy(new PolicyStatement({
+  actions: ['events:PutRule', 'events:DeleteRule', 'events:PutTargets', 'events:RemoveTargets'],
+  resources: [managedRuleArn],
+  conditions: { StringLike: { 'events:ManagedBy': 'malware-protection-plan.guardduty.amazonaws.com' } },
+}));
+malwareScanRole.addToPolicy(new PolicyStatement({ actions: ['events:DescribeRule', 'events:ListTargetsByRule'], resources: [managedRuleArn] }));
+malwareScanRole.addToPolicy(new PolicyStatement({
+  actions: ['s3:PutObjectTagging', 's3:GetObjectTagging', 's3:PutObjectVersionTagging', 's3:GetObjectVersionTagging', 's3:GetObject', 's3:GetObjectVersion'],
+  resources: [bucket.arnForObjects('*')],
+}));
+malwareScanRole.addToPolicy(new PolicyStatement({
+  actions: ['s3:PutBucketNotification', 's3:GetBucketNotification', 's3:ListBucket'],
+  resources: [bucket.bucketArn],
+}));
+malwareScanRole.addToPolicy(new PolicyStatement({
+  actions: ['s3:PutObject'],
+  resources: [bucket.arnForObjects('malware-protection-resource-validation-object')],
+}));
+const malwarePlan = new CfnMalwareProtectionPlan(storageStack, 'EvidenceMalwareProtection', {
+  role: malwareScanRole.roleArn,
+  protectedResource: { s3Bucket: { bucketName: bucket.bucketName, objectPrefixes: ['quarantine/'] } },
+  actions: { tagging: { status: 'ENABLED' } },
+});
+malwarePlan.node.addDependency(malwareScanRole);
+new Rule(storageStack, 'EvidenceScanResults', {
+  eventPattern: {
+    source: ['aws.guardduty'],
+    detailType: ['GuardDuty Malware Protection Object Scan Result'],
+    detail: { s3ObjectDetails: { bucketName: [bucket.bucketName] } },
+  },
+  targets: [new LambdaTarget(backend.scanEvidence.resources.lambda)],
+});
+(backend.scanEvidence.resources.lambda as LambdaFunction).addEnvironment('MALWARE_SCAN_MODE', 'guardduty');
 
 backend.addOutput({
   custom: {

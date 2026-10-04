@@ -1,65 +1,131 @@
 import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/data';
 import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
-import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { createHash } from 'node:crypto';
-import type { S3Handler } from 'aws-lambda';
+import type { S3Event } from 'aws-lambda';
+import { ALLOWED_MEDIA_TYPES, MAX_DOCUMENT_BYTES, matchesFileSignature, parseQuarantineKey } from '../claims-command/domain';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(process.env as never);
 Amplify.configure(resourceConfig, libraryOptions);
 const data: any = generateClient();
 const s3 = new S3Client({});
 
-const QUARANTINE_PREFIX = 'quarantine/';
-const ALLOWED_MEDIA_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
+// 'guardduty' (default): structural checks on upload, promotion only after GuardDuty
+// Malware Protection reports NO_THREATS_FOUND. 'none' is for disposable sandboxes only.
+const SCAN_MODE = process.env.MALWARE_SCAN_MODE === 'none' ? 'none' : 'guardduty';
 
-type ClaimDocument = { id: string; objectKey: string; byteSize: number; checksum: string; mediaType: string };
+type DocumentRecord = { id: string; objectKey: string; byteSize: number; checksum: string; mediaType: string; status: string };
+type Located = { model: 'ClaimDocument' | 'ApplicationDocument'; document: DocumentRecord; evidenceKey: string };
 
-// Uploads race the client's own ClaimDocument.create call, so the row may not exist yet
-// when this trigger fires. A few short retries absorb that; if it never appears we throw
-// so S3/Lambda's built-in async-invocation retry covers the rest.
-async function findDocument(claimId: string, objectKey: string): Promise<ClaimDocument | null> {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const { data: documents } = await data.models.ClaimDocument.list({ filter: { claimId: { eq: claimId } } });
-    const match = documents.find((document: ClaimDocument) => document.objectKey === objectKey);
-    if (match) return match;
-    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+type GuardDutyScanEvent = {
+  source: 'aws.guardduty';
+  detail: {
+    s3ObjectDetails: { bucketName: string; objectKey: string };
+    scanResultDetails: { scanResultStatus: string };
+  };
+};
+
+// Uploads race the client's registration call, so the row may not exist yet when the
+// S3 trigger fires. Short retries absorb that; after that we throw and let Lambda's
+// async retry cover the rest.
+async function locate(objectKey: string, retries = 4): Promise<Located | null> {
+  const parsed = parseQuarantineKey(objectKey);
+  if (!parsed) return null;
+  const model = parsed.kind === 'claim' ? 'ClaimDocument' : 'ApplicationDocument';
+  const evidenceKey = `evidence/${objectKey.slice('quarantine/'.length)}`;
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    const { data: documents, errors } = await data.models[model].list({ filter: { objectKey: { eq: objectKey } } });
+    if (errors?.length) throw new Error(errors[0].message);
+    const match = (documents as DocumentRecord[]).find((document) =>
+      parsed.kind === 'claim' ? (document as any).claimId === parsed.parentId : (document as any).applicationId === parsed.parentId);
+    if (match) return { model, document: match, evidenceKey };
+    if (attempt < retries - 1) await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
   }
   return null;
 }
 
-export const handler: S3Handler = async (event) => {
-  for (const record of event.Records) {
-    const bucket = record.s3.bucket.name;
+async function setStatus(located: Located, status: string, objectKey?: string) {
+  const { errors } = await data.models[located.model].update({ id: located.document.id, status, ...(objectKey ? { objectKey } : {}) });
+  if (errors?.length) throw new Error(errors[0].message);
+}
+
+async function discard(bucket: string, key: string) {
+  await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+}
+
+async function promote(bucket: string, quarantineKey: string, located: Located) {
+  await s3.send(new CopyObjectCommand({
+    Bucket: bucket, Key: located.evidenceKey,
+    CopySource: `${bucket}/${quarantineKey.split('/').map(encodeURIComponent).join('/')}`,
+    MetadataDirective: 'COPY',
+    // Drop GuardDuty's scan tags rather than copying them, which would need tagging permissions.
+    TaggingDirective: 'REPLACE',
+  }));
+  await setStatus(located, 'CLEAN', located.evidenceKey);
+  await discard(bucket, quarantineKey);
+}
+
+async function onUpload(bucket: string, objectKey: string) {
+  if (!parseQuarantineKey(objectKey)) {
+    // Not a recognised upload shape: nothing may reference it, so remove it.
+    await discard(bucket, objectKey);
+    return;
+  }
+  const located = await locate(objectKey);
+  if (!located) throw new Error(`No document registration found for ${objectKey} after retries`);
+  if (located.document.status !== 'QUARANTINED') return;
+
+  const object = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: objectKey }));
+  const bytes = await object.Body?.transformToByteArray();
+  const valid = Boolean(bytes)
+    && bytes!.byteLength === located.document.byteSize
+    && bytes!.byteLength <= MAX_DOCUMENT_BYTES
+    && createHash('sha256').update(bytes!).digest('hex') === located.document.checksum
+    && ALLOWED_MEDIA_TYPES.includes(located.document.mediaType)
+    && matchesFileSignature(bytes!, located.document.mediaType);
+
+  if (!valid) {
+    await setStatus(located, 'REJECTED');
+    await discard(bucket, objectKey);
+    return;
+  }
+  if (SCAN_MODE === 'none') {
+    await promote(bucket, objectKey, located);
+    return;
+  }
+  await setStatus(located, 'SCANNING');
+}
+
+async function onScanResult(event: GuardDutyScanEvent) {
+  const { bucketName, objectKey } = event.detail.s3ObjectDetails;
+  const located = await locate(objectKey, 2);
+  if (!located) return;
+  // GuardDuty can finish before the structural check marks the document SCANNING.
+  if (located.document.status === 'QUARANTINED') await onUpload(bucketName, objectKey);
+  const current = await locate(objectKey, 1);
+  if (!current || current.document.status !== 'SCANNING') return;
+
+  const verdict = event.detail.scanResultDetails.scanResultStatus;
+  if (verdict === 'NO_THREATS_FOUND') {
+    await promote(bucketName, objectKey, current);
+  } else if (verdict === 'THREATS_FOUND') {
+    await setStatus(current, 'REJECTED');
+    await discard(bucketName, objectKey);
+  } else {
+    // UNSUPPORTED / ACCESS_DENIED / FAILED: keep the file quarantined for a human to review.
+    await setStatus(current, 'FAILED');
+  }
+}
+
+export const handler = async (event: S3Event | GuardDutyScanEvent) => {
+  if ('source' in event && event.source === 'aws.guardduty') {
+    await onScanResult(event);
+    return;
+  }
+  for (const record of (event as S3Event).Records) {
     const objectKey = decodeURIComponent(record.s3.object.key.replace(/\+/g, ' '));
-    if (!objectKey.startsWith(QUARANTINE_PREFIX)) continue;
-
-    const segments = objectKey.slice(QUARANTINE_PREFIX.length).split('/');
-    if (segments.length < 3) continue;
-    const [owner, claimId, ...rest] = segments;
-    const suffix = rest.join('/');
-
-    const document = await findDocument(claimId, objectKey);
-    if (!document) throw new Error(`No ClaimDocument found for ${objectKey} after retries`);
-
-    const object = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: objectKey }));
-    const bodyBytes = await object.Body?.transformToByteArray();
-    const contentType = object.ContentType ?? '';
-    const checksum = bodyBytes ? createHash('sha256').update(bodyBytes).digest('hex') : null;
-
-    const valid = bodyBytes
-      && bodyBytes.byteLength === document.byteSize
-      && checksum === document.checksum
-      && contentType === document.mediaType
-      && ALLOWED_MEDIA_TYPES.includes(contentType);
-
-    if (!valid) {
-      await data.models.ClaimDocument.update({ id: document.id, status: 'REJECTED' });
-      continue;
-    }
-
-    const evidenceKey = `evidence/${owner}/${claimId}/${suffix}`;
-    await s3.send(new PutObjectCommand({ Bucket: bucket, Key: evidenceKey, Body: bodyBytes, ContentType: contentType }));
-    await data.models.ClaimDocument.update({ id: document.id, status: 'CLEAN', objectKey: evidenceKey });
+    if (!objectKey.startsWith('quarantine/')) continue;
+    await onUpload(record.s3.bucket.name, objectKey);
   }
 };

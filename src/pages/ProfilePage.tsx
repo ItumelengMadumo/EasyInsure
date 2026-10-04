@@ -10,7 +10,7 @@ export function ProfilePage({ portfolio, role, refresh, notify }: Props) {
   const profile = portfolio.profile;
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!profile) return notify('Profile provisioning is still in progress.');
-    const form = new FormData(event.currentTarget); const result = await client.models.UserProfile.update({ id: profile.id, displayName: String(form.get('displayName')) });
+    const form = new FormData(event.currentTarget); const result = await client.mutations.updateMyProfile({ displayName: String(form.get('displayName')) });
     if (result.errors?.length) notify(result.errors[0].message); else { notify('Profile updated.'); await refresh(); }
   }
   async function closeAccount() {

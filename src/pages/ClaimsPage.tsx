@@ -1,7 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react';
-import { uploadData } from 'aws-amplify/storage';
 import { ClaimTable, Field, PageHeader, Status } from '../components/ui';
-import { client } from '../lib/data';
+import { client, uploadQuarantined } from '../lib/data';
 import { money, shortDate, titleCase } from '../lib/format';
 import type { Claim, ClaimActivity, ClaimCommunication, Portfolio } from '../types';
 
@@ -11,17 +10,11 @@ type Props = {
 };
 const milestones = ['SUBMITTED', 'VALIDATING', 'UNDER_ASSESSMENT', 'DECISION_PENDING', 'APPROVED', 'PAYMENT_PENDING', 'PAID', 'CLOSED'];
 
-async function uploadClaimFile(owner: string, claimId: string, file: File, category: string) {
-  if (file.size > 10 * 1024 * 1024 || !['application/pdf', 'image/jpeg', 'image/png'].includes(file.type)) {
-    throw new Error('Documents must be PDF, JPEG or PNG and under 10 MB.');
-  }
-  const objectKey = `quarantine/${owner}/${claimId}/${crypto.randomUUID()}-${file.name}`;
-  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
-  const checksum = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-  await uploadData({ path: objectKey, data: file, options: { contentType: file.type } }).result;
-  const document = await client.models.ClaimDocument.create({
-    owner, claimId, objectKey, fileName: file.name, mediaType: file.type, byteSize: file.size,
-    checksum, status: 'QUARANTINED', uploadedBy: owner, category, visibility: 'CLIENT_VISIBLE',
+async function uploadClaimFile(claimId: string, file: File, category: string) {
+  const { objectKey, checksum } = await uploadQuarantined(`${claimId}`, file);
+  const document = await client.mutations.registerClaimDocument({
+    claimId, objectKey, fileName: file.name, mediaType: file.type, byteSize: file.size,
+    checksum, category, correlationId: crypto.randomUUID(),
   });
   if (document.errors?.length) throw new Error(document.errors[0].message);
 }
@@ -55,9 +48,9 @@ export function ClaimsPage({ portfolio, owner, groups, refresh, notify }: Props)
         idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID(),
       });
       if (draft.errors?.length || !draft.data) throw new Error(draft.errors?.[0]?.message ?? 'Claim draft failed.');
-      await uploadClaimFile(owner, draft.data.id, affidavit, 'AFFIDAVIT');
+      await uploadClaimFile(draft.data.id, affidavit, 'AFFIDAVIT');
       const evidence = form.get('evidence');
-      if (evidence instanceof File && evidence.size) await uploadClaimFile(owner, draft.data.id, evidence, 'INCIDENT_EVIDENCE');
+      if (evidence instanceof File && evidence.size) await uploadClaimFile(draft.data.id, evidence, 'INCIDENT_EVIDENCE');
       const result = await client.mutations.submitClaimDraft({
         claimId: draft.data.id, idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID(),
       });
@@ -71,25 +64,25 @@ export function ClaimsPage({ portfolio, owner, groups, refresh, notify }: Props)
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!selected) return;
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget; const form = new FormData(formElement);
     const result = await client.mutations.sendClaimCommunication({
       claimId: selected.id, channel: String(form.get('channel')), body: String(form.get('body')),
       subject: `Update for ${selected.claimNumber}`, visibility: 'CLIENT_VISIBLE',
       recipients: [selected.owner ?? owner], idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID(),
     });
     if (result.errors?.length) notify(result.errors[0].message);
-    else { event.currentTarget.reset(); notify('Message added to the case timeline.'); await refresh(); }
+    else { formElement.reset(); notify('Message added to the case timeline.'); await refresh(); }
   }
 
   async function addInternalNote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!selected) return;
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget; const form = new FormData(formElement);
     const result = await client.mutations.addClaimInternalNote({
       claimId: selected.id, body: String(form.get('body')),
       idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID(),
     });
     if (result.errors?.length) notify(result.errors[0].message);
-    else { event.currentTarget.reset(); notify('Private case note saved.'); await refresh(); }
+    else { formElement.reset(); notify('Private case note saved.'); await refresh(); }
   }
 
   const heading = isDeveloper ? 'Claim diagnostics and traceability.' : isSenior ? 'Every claim, under control.' : isStaff ? 'Cases you are assisting.' : 'From incident to outcome.';
@@ -138,7 +131,7 @@ function CaseDrawer({ claim, portfolio, isStaff, canOperate, isSenior, onClose, 
   const currentIndex = Math.max(0, ...recordedIndexes);
   const lead = team.find((item) => item.active && item.isLead);
   async function assign(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); const form = new FormData(event.currentTarget);
+    event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement);
     const profile = portfolio.profiles.find((item) => item.owner === form.get('userSubject'));
     if (!profile) return;
     const result = await client.mutations.assignClaimTeamMember({
@@ -150,12 +143,12 @@ function CaseDrawer({ claim, portfolio, isStaff, canOperate, isSenior, onClose, 
     if (result.errors?.length) notify(result.errors[0].message); else { notify('Case team updated.'); await refresh(); }
   }
   async function provideInfo(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); const form = new FormData(event.currentTarget);
+    event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement);
     const result = await client.mutations.provideClaimInformation({
       claimId: claim.id, response: String(form.get('response')),
       idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID(),
     });
-    if (result.errors?.length) notify(result.errors[0].message); else { notify('Information sent to your advisor.'); event.currentTarget.reset(); await refresh(); }
+    if (result.errors?.length) notify(result.errors[0].message); else { notify('Information sent to your advisor.'); formElement.reset(); await refresh(); }
   }
   async function runAction(action: string) {
     let result;
@@ -166,33 +159,40 @@ function CaseDrawer({ claim, portfolio, isStaff, canOperate, isSenior, onClose, 
       claimId: claim.id, summary: 'The case was closed after its final outcome.',
       idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID(),
     });
+    else if (action === 'PAID') {
+      const paymentReference = window.prompt(`Bank/EFT reference for the ${money.format(claim.approvedPayout ?? 0)} payout:`)?.trim();
+      if (!paymentReference) return;
+      result = await client.mutations.recordClaimPayout({
+        claimId: claim.id, paidAmount: claim.approvedPayout ?? 0, paymentReference, correlationId: crypto.randomUUID(),
+      });
+    }
     else result = await client.mutations.transitionClaim({
       claimId: claim.id, targetStatus: action,
-      summary: action === 'PAYMENT_PENDING' ? 'Your approved payout is being prepared.' : action === 'PAID' ? 'Your claim payment was completed.' : `Claim moved to ${titleCase(action)}.`,
+      summary: action === 'PAYMENT_PENDING' ? 'Your approved payout is being prepared.' : `Claim moved to ${titleCase(action)}.`,
       idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID(),
     });
     if (result.errors?.length) notify(result.errors[0].message); else { notify('Case progress updated.'); await refresh(); }
   }
   async function requestInfo(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); const form = new FormData(event.currentTarget);
+    event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement);
     const result = await client.mutations.requestClaimInformation({
       claimId: claim.id, request: String(form.get('request')),
       idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID(),
     });
-    if (result.errors?.length) notify(result.errors[0].message); else { notify('Information request added to the client timeline.'); event.currentTarget.reset(); await refresh(); }
+    if (result.errors?.length) notify(result.errors[0].message); else { notify('Information request added to the client timeline.'); formElement.reset(); await refresh(); }
   }
   async function logCall(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); const form = new FormData(event.currentTarget);
+    event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement);
     const result = await client.mutations.logClaimCall({
       claimId: claim.id, direction: String(form.get('direction')), participants: [String(form.get('participants'))],
       startedAt: new Date(String(form.get('startedAt'))).toISOString(),
       consentStatus: String(form.get('consentStatus')), outcome: String(form.get('outcome')),
       advisorNotes: String(form.get('advisorNotes')), idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID(),
     });
-    if (result.errors?.length) notify(result.errors[0].message); else { notify('Call logged in the permanent case history.'); event.currentTarget.reset(); await refresh(); }
+    if (result.errors?.length) notify(result.errors[0].message); else { notify('Call logged in the permanent case history.'); formElement.reset(); await refresh(); }
   }
   async function assess(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); const form = new FormData(event.currentTarget);
+    event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement);
     const result = await client.mutations.calculateClaimPayoutAssessment({
       claimId: claim.id, evidenceReviewed: documents.filter((item) => item.status === 'CLEAN').map((item) => item.id),
       coveredLossValue: Number(form.get('coveredLossValue')), repairEstimate: form.get('repairEstimate') ? Number(form.get('repairEstimate')) : undefined,
@@ -201,7 +201,7 @@ function CaseDrawer({ claim, portfolio, isStaff, canOperate, isSenior, onClose, 
       exclusions: String(form.get('exclusions') ?? '').split(',').map((item) => item.trim()).filter(Boolean),
       idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID(),
     });
-    if (result.errors?.length) notify(result.errors[0].message); else { notify(`Assessment saved with a ${money.format(result.data.recommendedPayout)} recommendation.`); event.currentTarget.reset(); await refresh(); }
+    if (result.errors?.length) notify(result.errors[0].message); else { notify(`Assessment saved with a ${money.format(result.data.recommendedPayout)} recommendation.`); formElement.reset(); await refresh(); }
   }
   async function finalizeAssessment(id: string) {
     const result = await client.mutations.finalizeClaimPayoutAssessment({ assessmentId: id, idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() });

@@ -33,9 +33,8 @@ const schema = a.schema({
     businessRole: a.ref('BusinessRole').required(),
     status: a.ref('AccountStatus').required(),
   }).authorization((allow) => [
-    allow.ownerDefinedIn('owner').to(['read', 'update']),
-    allow.groups(['senior_officer']).to(['read']),
-    allow.groups(['superuser']),
+    allow.ownerDefinedIn('owner').to(['read']),
+    allow.groups(senior).to(['read']),
   ]),
 
   Asset: a.model({
@@ -76,14 +75,14 @@ const schema = a.schema({
     schemaVersion: a.string().required(), answers: a.json().required(),
     completedSections: a.string().array().required(), createdAtSnapshot: a.datetime().required(),
   }).secondaryIndexes((index) => [index('assetId'), index('owner')]).authorization((allow) => [
-    allow.ownerDefinedIn('owner').to(['read']), allow.groups(senior),
+    allow.ownerDefinedIn('owner').to(['read']), allow.groups(senior).to(['read']),
   ]),
 
   UnderwritingProfile: a.model({
     owner: a.string().required(), version: a.integer().required(), consentGiven: a.boolean().required(),
     consentedAt: a.datetime(), declarations: a.json().required(), createdAtSnapshot: a.datetime().required(),
   }).secondaryIndexes((index) => [index('owner').sortKeys(['version'])]).authorization((allow) => [
-    allow.ownerDefinedIn('owner').to(['read']), allow.groups(senior),
+    allow.ownerDefinedIn('owner').to(['read']), allow.groups(senior).to(['read']),
   ]),
 
   PolicyApplication: a.model({
@@ -97,7 +96,7 @@ const schema = a.schema({
   }).secondaryIndexes((index) => [
     index('owner').sortKeys(['lastUpdatedAt']), index('status').sortKeys(['lastUpdatedAt']),
     index('assignedUnderwriterId').sortKeys(['lastUpdatedAt']), index('applicationNumber'), index('assetId'),
-  ]).authorization((allow) => [allow.ownerDefinedIn('owner').to(['read']), allow.groups(senior)]),
+  ]).authorization((allow) => [allow.ownerDefinedIn('owner').to(['read']), allow.groups(senior).to(['read'])]),
 
   PremiumAssessment: a.model({
     owner: a.string().required(), applicationId: a.id().required(), version: a.integer().required(),
@@ -107,7 +106,7 @@ const schema = a.schema({
     actorSubject: a.string().required(), actorDisplayNameSnapshot: a.string().required(), overrideReason: a.string(),
     createdAtSnapshot: a.datetime().required(), idempotencyKey: a.string().required(),
   }).secondaryIndexes((index) => [index('applicationId').sortKeys(['version']), index('idempotencyKey')]).authorization((allow) => [
-    allow.ownerDefinedIn('owner').to(['read']), allow.groups(senior),
+    allow.ownerDefinedIn('owner').to(['read']), allow.groups(senior).to(['read']),
   ]),
 
   ApplicationDocument: a.model({
@@ -116,7 +115,7 @@ const schema = a.schema({
     byteSize: a.integer().required(), checksum: a.string().required(), status: a.ref('DocumentStatus').required(),
     uploadedAt: a.datetime().required(),
   }).secondaryIndexes((index) => [index('applicationId'), index('checksum')]).authorization((allow) => [
-    allow.ownerDefinedIn('owner').to(['create', 'read']), allow.groups(senior).to(['read']),
+    allow.ownerDefinedIn('owner').to(['read']), allow.groups(senior).to(['read']),
   ]),
 
   AssetValuation: a.model({
@@ -131,7 +130,7 @@ const schema = a.schema({
     notes: a.string(),
   }).secondaryIndexes((index) => [index('assetId')]).authorization((allow) => [
     allow.ownerDefinedIn('owner').to(['read']),
-    allow.groups(staff),
+    allow.groups(senior).to(['read']),
   ]),
 
   Policy: a.model({
@@ -149,7 +148,7 @@ const schema = a.schema({
     approvalTimestamp: a.datetime(),
   }).secondaryIndexes((index) => [index('owner'), index('policyNumber')]).authorization((allow) => [
     allow.ownerDefinedIn('owner').to(['read']),
-    allow.groups(senior),
+    allow.groups(senior).to(['read']),
   ]),
 
   Claim: a.model({
@@ -187,7 +186,7 @@ const schema = a.schema({
     index('claimNumber'), index('policeCaseNumber'), index('idempotencyKey'),
   ]).authorization((allow) => [
     allow.ownerDefinedIn('owner').to(['read']),
-    allow.groups(senior),
+    allow.groups(senior).to(['read']),
   ]),
 
   ClaimDocument: a.model({
@@ -204,7 +203,7 @@ const schema = a.schema({
     category: a.ref('DocumentCategory'),
     visibility: a.ref('CaseVisibility'),
   }).secondaryIndexes((index) => [index('claimId'), index('checksum')]).authorization((allow) => [
-    allow.ownerDefinedIn('owner').to(['create', 'read']),
+    allow.ownerDefinedIn('owner').to(['read']),
     allow.groups(senior).to(['read']),
   ]),
 
@@ -228,7 +227,7 @@ const schema = a.schema({
     index('claimOwner').sortKeys(['assignedAt']),
   ]).authorization((allow) => [
     allow.ownerDefinedIn('claimOwner').to(['read']),
-    allow.groups(senior),
+    allow.groups(senior).to(['read']),
   ]),
 
   ClaimActivity: a.model({
@@ -262,7 +261,7 @@ const schema = a.schema({
     body: a.string().required(),
     occurredAt: a.datetime().required(),
     correlationId: a.string().required(),
-  }).secondaryIndexes((index) => [index('claimId').sortKeys(['occurredAt'])]).authorization((allow) => [allow.groups(senior)]),
+  }).secondaryIndexes((index) => [index('claimId').sortKeys(['occurredAt'])]).authorization((allow) => [allow.groups(senior).to(['read'])]),
 
   ClaimCommunication: a.model({
     owner: a.string().required(),
@@ -327,7 +326,7 @@ const schema = a.schema({
     loggedBySubject: a.string().required(),
     loggedByDisplayNameSnapshot: a.string().required(),
     correlationId: a.string().required(),
-  }).secondaryIndexes((index) => [index('claimId').sortKeys(['startedAt'])]).authorization((allow) => [allow.groups(senior)]),
+  }).secondaryIndexes((index) => [index('claimId').sortKeys(['startedAt'])]).authorization((allow) => [allow.groups(senior).to(['read'])]),
 
   InboundReconciliation: a.model({
     channel: a.ref('CommunicationChannel').required(),
@@ -344,7 +343,7 @@ const schema = a.schema({
     correlationId: a.string().required(),
   }).secondaryIndexes((index) => [
     index('status').sortKeys(['receivedAt']), index('providerReference'),
-  ]).authorization((allow) => [allow.groups(senior)]),
+  ]).authorization((allow) => [allow.groups(senior).to(['read'])]),
 
   AccountClosureRequest: a.model({
     owner: a.string().required(),
@@ -356,8 +355,8 @@ const schema = a.schema({
   }).secondaryIndexes((index) => [
     index('owner'), index('status').sortKeys(['requestedAt']),
   ]).authorization((allow) => [
-    allow.ownerDefinedIn('owner').to(['create', 'read']),
-    allow.groups(senior),
+    allow.ownerDefinedIn('owner').to(['read']),
+    allow.groups(senior).to(['read']),
   ]),
 
   ClaimAnalysis: a.model({
@@ -387,9 +386,9 @@ const schema = a.schema({
     recommendedPayout: a.float().required(), calculationVersion: a.string().required(), status: a.string().required(),
     assessorSubject: a.string().required(), assessorDisplayNameSnapshot: a.string().required(),
     assessorRoleSnapshot: a.string().required(), overrideReason: a.string(), createdAtSnapshot: a.datetime().required(),
-    finalizedAt: a.datetime(), idempotencyKey: a.string().required(), correlationId: a.string().required(),
+    finalizedAt: a.datetime(), finalizedBySubject: a.string(), idempotencyKey: a.string().required(), correlationId: a.string().required(),
   }).secondaryIndexes((index) => [index('claimId').sortKeys(['version']), index('idempotencyKey')]).authorization((allow) => [
-    allow.ownerDefinedIn('claimOwner').to(['read']), allow.groups(senior),
+    allow.ownerDefinedIn('claimOwner').to(['read']), allow.groups(senior).to(['read']),
   ]),
 
   AuditEvent: a.model({
@@ -483,10 +482,16 @@ const schema = a.schema({
     idempotencyKey: a.string().required(), correlationId: a.string().required(),
   }).returns(a.ref('Claim')).authorization((allow) => [allow.authenticated()]).handler(a.handler.function(claimsCommand)),
   approveClaim: a.mutation().arguments({
-    claimId: a.id().required(), approvedPayout: a.float().required(), overrideReason: a.string(), correlationId: a.string().required(),
+    claimId: a.id().required(), approvedPayout: a.float().required(), overrideReason: a.string(),
+    idempotencyKey: a.string().required(), correlationId: a.string().required(),
   }).returns(a.ref('Claim')).authorization((allow) => [allow.groups(senior)]).handler(a.handler.function(claimsCommand)),
   rejectClaim: a.mutation().arguments({
-    claimId: a.id().required(), reason: a.string().required(), correlationId: a.string().required(),
+    claimId: a.id().required(), reason: a.string().required(),
+    idempotencyKey: a.string().required(), correlationId: a.string().required(),
+  }).returns(a.ref('Claim')).authorization((allow) => [allow.groups(senior)]).handler(a.handler.function(claimsCommand)),
+  recordClaimPayout: a.mutation().arguments({
+    claimId: a.id().required(), paidAmount: a.float().required(), paymentReference: a.string().required(),
+    correlationId: a.string().required(),
   }).returns(a.ref('Claim')).authorization((allow) => [allow.groups(senior)]).handler(a.handler.function(claimsCommand)),
   assignOfficer: a.mutation().arguments({
     claimId: a.id().required(), officerSubject: a.string().required(), correlationId: a.string().required(),
@@ -542,6 +547,18 @@ const schema = a.schema({
   closeClaim: a.mutation().arguments({
     claimId: a.id().required(), summary: a.string().required(), idempotencyKey: a.string().required(), correlationId: a.string().required(),
   }).returns(a.ref('Claim')).authorization((allow) => [allow.groups(senior)]).handler(a.handler.function(claimsCommand)),
+  updateMyProfile: a.mutation().arguments({ displayName: a.string().required() })
+    .returns(a.ref('UserProfile')).authorization((allow) => [allow.authenticated()]).handler(a.handler.function(claimsCommand)),
+  registerClaimDocument: a.mutation().arguments({
+    claimId: a.id().required(), objectKey: a.string().required(), fileName: a.string().required(),
+    mediaType: a.string().required(), byteSize: a.integer().required(), checksum: a.string().required(),
+    category: a.string().required(), correlationId: a.string().required(),
+  }).returns(a.ref('ClaimDocument')).authorization((allow) => [allow.authenticated()]).handler(a.handler.function(claimsCommand)),
+  registerApplicationDocument: a.mutation().arguments({
+    applicationId: a.id().required(), objectKey: a.string().required(), fileName: a.string().required(),
+    mediaType: a.string().required(), byteSize: a.integer().required(), checksum: a.string().required(),
+    category: a.string().required(), correlationId: a.string().required(),
+  }).returns(a.ref('ApplicationDocument')).authorization((allow) => [allow.authenticated()]).handler(a.handler.function(claimsCommand)),
   requestAccountClosure: a.mutation().arguments({
     idempotencyKey: a.string().required(), correlationId: a.string().required(),
   }).returns(a.ref('AccountClosureRequest')).authorization((allow) => [allow.authenticated()]).handler(a.handler.function(claimsCommand)),
@@ -552,7 +569,7 @@ const schema = a.schema({
   }),
   generateClaimCopilot: a.query().arguments({
     claim: a.json().required(), deterministicOutputs: a.json().required(), evidenceText: a.string(),
-  }).returns(a.ref('CopilotResult')).authorization((allow) => [allow.groups(staff)]).handler(a.handler.function(claimsCopilot)),
+  }).returns(a.ref('CopilotResult')).authorization((allow) => [allow.groups(senior)]).handler(a.handler.function(claimsCopilot)),
 }).authorization((allow) => [
   allow.resource(claimsCommand), allow.resource(processClaim), allow.resource(scanEvidence),
   allow.resource(communicationWorker), allow.resource(communicationWebhook),

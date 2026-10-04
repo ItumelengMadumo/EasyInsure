@@ -31,7 +31,9 @@ export const handler = async (event: { stage: string; state: State }): Promise<S
       data.models.ClaimDocument.list({ filter: { claimId: { eq: state.claimId } } }),
     ]);
     if (!claim || claim.status !== 'UNDER_ASSESSMENT') throw new Error('Claim is not under assessment');
-    if (documents.data.some((document: { status: string }) => !['CLEAN', 'EXTRACTED'].includes(document.status))) throw new Error('Evidence scanning is incomplete');
+    // Rejected uploads are excluded from the evidence set, not a reason to fail the claim.
+    const usable = documents.data.filter((document: { status: string }) => !['REJECTED', 'FAILED'].includes(document.status));
+    if (usable.some((document: { status: string }) => !['CLEAN', 'EXTRACTED'].includes(document.status))) throw new Error('Evidence scanning is incomplete');
     const [{ data: asset }, { data: policy }, previous] = await Promise.all([
       data.models.Asset.get({ id: claim.assetId }), data.models.Policy.get({ id: claim.policyId }),
       data.models.Claim.list({ filter: { owner: { eq: claim.owner } } }),
