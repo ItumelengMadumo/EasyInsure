@@ -2,8 +2,11 @@ import { generateClient } from 'aws-amplify/data';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import { uploadData } from 'aws-amplify/storage';
 import type { Portfolio } from '../types';
+import { createDemoClient } from './demo/client';
+import { isDemo } from './demo/mode';
 
-export const client: any = generateClient();
+// Demo mode swaps in an in-memory client so prospects can explore without an account or a backend.
+export const client: any = isDemo() ? createDemoClient() : generateClient();
 
 // Reads every page; a bare list() stops at the first page and silently drops records.
 async function listAll(model: any) {
@@ -26,6 +29,7 @@ export async function uploadQuarantined(path: string, file: File) {
   if (file.size > 10 * 1024 * 1024 || !ALLOWED_TYPES.includes(file.type)) {
     throw new Error('Documents must be PDF, JPEG or PNG and under 10 MB.');
   }
+  if (isDemo()) return { objectKey: `demo/${crypto.randomUUID()}-${file.name}`, checksum: 'demo' };
   const { identityId } = await fetchAuthSession();
   if (!identityId) throw new Error('Your session has expired. Please sign in again.');
   const safeName = file.name.normalize('NFKD').replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^\.+/, '').slice(-120) || 'document';

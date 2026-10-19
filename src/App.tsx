@@ -3,17 +3,27 @@ import { Authenticator } from '@aws-amplify/ui-react';
 import { getCurrentUser } from 'aws-amplify/auth';
 import { AuthHeader } from './components/AuthHeader';
 import { Workspace } from './components/Workspace';
+import { DemoPicker } from './components/DemoPicker';
+import { exitDemo } from './components/DemoBanner';
+import { isDemo, isDemoEnabled } from './lib/demo/mode';
 import { LandingPage } from './pages/LandingPage';
 
 type Entry = 'checking' | 'landing' | 'signIn' | 'signUp' | 'authenticated';
 
 export default function App() {
   const [entry, setEntry] = useState<Entry>('checking');
+  const [picker, setPicker] = useState(false);
+  const demo = isDemo();
   useEffect(() => {
+    if (demo) return;
     getCurrentUser().then(() => setEntry('authenticated')).catch(() => setEntry('landing'));
-  }, []);
+  }, [demo]);
+  if (demo) return <Workspace signOut={exitDemo} />;
   if (entry === 'checking') return <div className="app-boot"><span>EI</span><p>Opening your secure workspace…</p></div>;
-  if (entry === 'landing') return <LandingPage onLogin={() => setEntry('signIn')} onRegister={() => setEntry('signUp')} />;
+  if (entry === 'landing') return <>
+    <LandingPage onLogin={() => setEntry('signIn')} onRegister={() => setEntry('signUp')} onDemo={isDemoEnabled() ? () => setPicker(true) : undefined} />
+    {picker && <DemoPicker onClose={() => setPicker(false)} />}
+  </>;
   return <div className="auth-experience">
     <section className="auth-story">
       <button className="back-home" onClick={() => setEntry('landing')}>← Back to EasyInsure</button>

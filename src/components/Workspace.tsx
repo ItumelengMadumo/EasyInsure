@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader } from '@aws-amplify/ui-react';
-import { fetchAuthSession, fetchUserAttributes, getCurrentUser } from 'aws-amplify/auth';
 import { client, loadPortfolio } from '../lib/data';
+import { isDemo } from '../lib/demo/mode';
+import { getIdentity } from '../lib/identity';
 import { initials, titleCase } from '../lib/format';
 import type { Page, Portfolio } from '../types';
 import { OverviewPage } from '../pages/OverviewPage';
@@ -12,6 +13,7 @@ import { DocumentsPage } from '../pages/DocumentsPage';
 import { ReviewPage } from '../pages/ReviewPage';
 import { ProfilePage } from '../pages/ProfilePage';
 import { PageErrorBoundary } from './PageErrorBoundary';
+import { DemoBanner } from './DemoBanner';
 
 const emptyPortfolio: Portfolio = {
   assets: [], policies: [], applications: [], premiumAssessments: [], claims: [], documents: [], assignments: [],
@@ -47,22 +49,18 @@ export function Workspace({ signOut }: { signOut?: () => void }) {
   }, []);
 
   useEffect(() => {
-    Promise.all([getCurrentUser(), fetchAuthSession(), fetchUserAttributes()]).then(([user, session, attributes]) => {
-      setOwner(user.userId);
-      const emailName = String(attributes.email ?? '').split('@')[0].replace(/[._-]+/g, ' ').trim();
-      const candidate = String(attributes.name ?? attributes.preferred_username ?? emailName ?? '').trim();
+    getIdentity().then((identity) => {
+      setOwner(identity.userId);
+      const emailName = identity.email.split('@')[0].replace(/[._-]+/g, ' ').trim();
+      const candidate = identity.name || emailName;
       setAuthenticatedName(humanName(candidate && !/^easy\s*insure(?:\s+member)?$/i.test(candidate) ? candidate : emailName));
-      const raw = session.tokens?.accessToken.payload['cognito:groups'];
-      const resolvedGroups = Array.isArray(raw) ? raw.map(String) : [];
-      groupsRef.current = resolvedGroups;
-      setGroups(resolvedGroups);
+      groupsRef.current = identity.groups;
+      setGroups(identity.groups);
       // The AppSync access token carries no email/name claim, so the resolver
       // cannot see a human identity unless the authenticated client forwards it.
-      const profileEmail = String(attributes.email ?? '').trim();
-      const profileDisplayName = String(attributes.name ?? attributes.preferred_username ?? '').trim();
       return client.mutations.ensureUserProfile({
-        ...(profileEmail ? { email: profileEmail } : {}),
-        ...(profileDisplayName ? { displayName: profileDisplayName } : {}),
+        ...(identity.email ? { email: identity.email } : {}),
+        ...(identity.name ? { displayName: identity.name } : {}),
       }).then(() => refresh());
     }).catch(() => { setNotice('Unable to resolve your secure workspace.'); setBusy(false); });
     const sub = (window as any).__easyInsureClaimSubscription;
@@ -99,6 +97,7 @@ export function Workspace({ signOut }: { signOut?: () => void }) {
   else content = <OverviewPage portfolio={portfolio} go={setPage} displayName={displayName} />;
 
   return <div className="app">
+    {isDemo() && <DemoBanner />}
     <aside className={mobileNav ? 'nav-open' : ''}>
       <div className="brand"><span>EI</span><div><strong>EasyInsure</strong><small>Claims intelligence</small></div></div>
       <nav>{availableNav.map((item) => <div key={item.page}>{item.section && <span className="nav-section">{item.section}</span>}<button className={page === item.page ? 'active' : ''} onClick={() => { setPage(item.page); setMobileNav(false); }}><i>{item.icon}</i>{item.label}</button></div>)}</nav>
