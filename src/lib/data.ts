@@ -43,6 +43,16 @@ export async function uploadQuarantined(path: string, file: File) {
 const values = (result: any) => result.data ?? [];
 const firstError = (results: any[]) => results.flatMap((result) => result.errors ?? [])[0];
 
+/** AppSync returns a.json() fields as JSON strings; the UI wants objects. */
+export function parseJson<T = any>(value: unknown): T | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') return value as T;
+  try { return JSON.parse(value) as T; } catch { return null; }
+}
+const withTerms = (application: any) => ({ ...application, quoteTerms: parseJson(application.quoteTerms) });
+const withFactors = (assessment: any) => ({ ...assessment, factors: parseJson(assessment.factors) ?? [] });
+const withOutputs = (analysis: any) => ({ ...analysis, deterministicOutputs: parseJson(analysis.deterministicOutputs) });
+
 export async function loadPortfolio(groups: string[] = []): Promise<Portfolio> {
   const { isSenior: senior, isStaff: staff } = roleFlags(groups);
 
@@ -53,8 +63,11 @@ export async function loadPortfolio(groups: string[] = []): Promise<Portfolio> {
     const baseError = firstError([result, profiles]);
     if (baseError) throw new Error(baseError.message);
     const caseData = (result.data ?? {}) as any;
+    // Officers can only list their own profile; the resolver adds the names of their clients.
+    const known = new Set(values(profiles).map((item: any) => item.owner));
+    const clients = (caseData.clientProfiles ?? []).filter((item: any) => !known.has(item.owner));
     return {
-      assets: caseData.assets ?? [], policies: caseData.policies ?? [], profiles: values(profiles),
+      assets: caseData.assets ?? [], policies: caseData.policies ?? [], profiles: [...values(profiles), ...clients],
       applications: [], premiumAssessments: [], analyses: [], jobs: caseData.jobs ?? [],
       claims: caseData.claims ?? [], documents: caseData.documents ?? [],
       assignments: caseData.assignments ?? [], activities: caseData.activities ?? [],
@@ -83,11 +96,11 @@ export async function loadPortfolio(groups: string[] = []): Promise<Portfolio> {
   if (error) throw new Error(error.message);
   return {
     assets: values(assets), policies: values(policies), profiles: values(profiles),
-    applications: values(applications), premiumAssessments: values(premiumAssessments),
+    applications: values(applications).map(withTerms), premiumAssessments: values(premiumAssessments).map(withFactors),
     claims: values(claims), documents: values(documents), assignments: values(assignments),
     activities: values(activities), communications: values(communications),
     internalNotes: senior ? values(internalNotes) : [], claimAssessments: senior ? values(claimAssessments) : [],
-    analyses: senior ? values(analyses) : [], jobs: [],
+    analyses: senior ? values(analyses).map(withOutputs) : [], jobs: [],
     profile: values(profiles)[0] ?? null,
   };
 }

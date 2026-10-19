@@ -16,3 +16,4 @@ export const assetCategoryDefinitions = () => categoryDefinitions;
 export const estimatePremium = calculatePremium;
 export const recommendPayout = calculateRecommendedPayout;
 export { validateApplication };
+export { ALLOWED_MEDIA_TYPES, MEDIA_TYPE_LABEL, POLICY_WORDING_VERSION, SENIOR_APPROVAL_LIMIT, assertDecisionAuthority, maxBytesFor } from '../../../amplify/functions/claims-command/domain';
