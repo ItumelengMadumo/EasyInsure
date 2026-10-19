@@ -18,7 +18,8 @@ Authenticated member workspace
   └─ Manage identity and security
 
 Authorized officer workspace
-  └─ Review calculations and evidence → approve or reject
+  ├─ Work queue: start assessments, prepare payout assessments, send them for senior review
+  └─ Senior review: finalise assessments → a different senior approves or rejects (superuser above R250,000)
 ```
 
 The public estimator intentionally uses no personal information. It gives an indicative result rather than creating a policy or implying that underwriting has occurred.
@@ -74,11 +75,11 @@ Future extension:
 
 ## Flow 4: Human claim decision
 
-1. Officer opens the review queue.
-2. Officer sees requested amount, suggested payout, risk, tier, and rule indicators.
-3. The platform identifies AI content as advisory.
-4. A senior officer approves or rejects.
-5. The action and changed values are written to the audit trail.
+1. An officer prepares a payout assessment and sends it for senior review.
+2. A senior officer finalises it, which moves the claim to a decision.
+3. A *different* senior officer opens the claim in the review queue beside the step-by-step calculation, the rule-based risk signals with reasons, and the advisory AI summary.
+4. They enter the approved amount (no pre-fill), give a reason if it differs from the assessment, and confirm. Above R250,000 they escalate to a superuser.
+5. The action and changed values are written to the audit trail, and the client sees the outcome or the rejection reason.
 
 ## Flow rules for future work
 

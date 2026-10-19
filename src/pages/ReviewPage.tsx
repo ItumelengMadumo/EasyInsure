@@ -42,9 +42,9 @@ function SeniorReview({ portfolio, groups, owner, refresh, notify }: Props) {
         <strong>{claim.claimNumber}</strong><span>{clientName(portfolio, claim.owner)} · {titleCase(claim.claimType)}</span><small>{money.format(claim.suggestedPayout ?? latestAssessment(portfolio, claim.id)?.recommendedPayout ?? 0)} · waiting {daysSince(claim.lastActivityAt)} d{claim.fraudFlag ? ' · ⚑ flagged' : ''}</small></button>)}</div>
       {active && <div className="review-split">
         <div className="review-case"><CaseFile key={active.id} claim={active} portfolio={portfolio} owner={owner} access={access} refresh={refresh} notify={notify} embedded /></div>
-        <aside className="review-side">{queue === 'decide'
+        <div className="review-side">{queue === 'decide'
           ? <DecisionPanel key={active.id} claim={active} portfolio={portfolio} groups={groups} owner={owner} refresh={refresh} notify={notify} />
-          : <FinalisePanel key={active.id} claim={active} portfolio={portfolio} refresh={refresh} notify={notify} />}</aside>
+          : <FinalisePanel key={active.id} claim={active} portfolio={portfolio} refresh={refresh} notify={notify} />}</div>
       </div>}
     </>}
   </>;
@@ -114,7 +114,7 @@ function DecisionPanel({ claim, portfolio, groups, owner, refresh, notify }: { c
   }
 
   return <>
-    <section className="review-block decision">
+    <section className="review-block">
       <span className="eyebrow">{claim.claimNumber} · {assetLabel(portfolio, claim)}</span>
       <h2>Make the decision</h2>
       {assessment ? <PayoutBreakdown input={assessment} title="How the assessed payout was reached" /> : <p className="empty">No finalised assessment is on record, so a decision cannot be made yet.</p>}
@@ -145,7 +145,7 @@ function FinalisePanel({ claim, portfolio, refresh, notify }: { claim: Claim; po
     setOpen(false); notify('Assessment finalised. The claim now awaits a decision by another senior officer.'); await refresh();
   }
   return <>
-    <section className="review-block decision">
+    <section className="review-block">
       <span className="eyebrow">{claim.claimNumber} · {assetLabel(portfolio, claim)}</span>
       <h2>Finalise the assessment</h2>
       <p className="muted">Sent for review by {assessment.assessorDisplayNameSnapshot ?? 'an officer'}{assessment.submittedAt ? ` · ${dateTime(assessment.submittedAt)}` : ''}.</p>

@@ -38,13 +38,14 @@ Lambda (business logic), Step Functions (claim assessment workflow) and Bedrock 
 | Area | What users can do |
 | --- | --- |
 | **Landing page** (public) | Read how the product works and get an anonymous ballpark premium. No account or personal data needed. |
-| **Overview** | Portfolio metrics (protected value, active policies, claims in progress, flagged claims), recent claims and cover coverage. |
-| **Assets** | A 10-step policy application per asset (vehicle, property, electronics, furniture and valuables, machinery) with search, filters and sorting over the register. |
-| **Policies** | Applications, indicative premium ranges, formal quotes and active policies. Seniors review and quote; clients accept. |
-| **Claims** | Lodge a claim (police case number and affidavit required), then follow a case file: timeline, case team, documents, staff notes, payout assessment. |
-| **Document locker** | Every evidence file with its scan status. |
-| **Review queue** (staff) | Claims awaiting a payout decision. Only seniors can approve or reject. |
-| **Profile & security** | Display name, role, and account closure (which anonymises identifiers but archives case records). |
+| **Overview** | Clients: protected value, active policies, claims in progress and a **Waiting on you** list (information requests, quotes to accept). Officers: a **work queue** of what to do next, overdue items and open cases by status. Developers: **Diagnostics** (job health, no client data). |
+| **Assets** (clients) | A 10-step policy application per asset (vehicle, property, electronics, furniture and valuables, machinery), with plain-language help on every question, plus search, filters and sorting. Each asset opens a details drawer showing where its application stands, what was declared and **why it is priced as it is**. |
+| **Policies / Underwriting** | Applications, indicative premium ranges, formal quotes and active policies. Seniors review and quote (setting the excess, cover limit and exclusions); clients see the terms and must tick two confirmations before cover activates. Each policy shows its excess, limit, exclusions, claims and a printable **policy schedule**. |
+| **Claims** | Lodge a claim, then follow a case file: the claim itself, a progress tracker, "what happens next", timeline, case team, documents, staff notes and payout assessment. The list has search, sorting, a date filter and (for staff) CSV export. Clients see plain-language status and never the internal risk score. |
+| **Documents / Evidence** | Every evidence file with its scan status. Any file opens in a secure preview (PDF, image or video). Clients can attach photos, videos and documents when they reply. |
+| **Review queue** (seniors) | **Awaiting finalisation** (assessments officers have sent up) and **Awaiting decision**. Each claim opens beside a decision panel with the step-by-step payout calculation, the rule-based risk signals with their reasons, and the advisory AI summary. Officers get **My submissions** instead. |
+| **Admin console** (superuser) | Reports and service targets, an assignment board, the case audit log, the rules and thresholds in force, and the list of people and roles. |
+| **Profile & security** | Display name, change password, optional authenticator-app (TOTP) MFA, sign out of all devices, and (for clients only) account closure. |
 
 ---
 
@@ -56,15 +57,16 @@ manually in Cognito (`aws cognito-idp admin-add-user-to-group`).
 | Role | What they can do |
 | --- | --- |
 | `client` | See only their own assets, applications, policies, claims and client-visible case activity. Apply for cover, accept quotes, lodge claims, answer information requests, message their advisor. |
-| `junior_officer`, `intermediate_officer` | Work **only the claims they are actively assigned to**. Start assessment, request information from the client, message the client, add private notes, log calls, calculate payout assessments. They cannot decide claims. |
-| `senior_officer` | Everything above across **all** cases, plus: assign the case team, review/decline applications and issue quotes, finalise payout assessments, approve or reject claims, record payouts and close cases. |
-| `superuser` | Senior permissions, and the only role that can approve payouts above **R250,000**. |
-| `developer` | Read-only diagnostics across every case. No case actions and no financial authority. |
+| `junior_officer`, `intermediate_officer` | Work **only the claims they are actively assigned to**. Start assessment, request information from the client, message the client, add private notes, log calls, calculate a payout assessment and **send it to a senior for review**. They cannot finalise or decide claims. |
+| `senior_officer` | Everything above across **all** cases, plus: assign the case team, review/decline applications and issue quotes, **finalise** submitted assessments, approve or reject claims, record payouts and close cases. |
+| `superuser` | Senior permissions, the only role that can approve payouts above **R250,000**, and the admin console. |
+| `developer` | Read-only **Diagnostics**: claim workflow state and job health with client names, descriptions, documents and messages removed on the server. No case actions and no financial authority. |
 
 Separation of duties is enforced server-side (`assertDecisionAuthority` in
 `amplify/functions/claims-command/domain.ts`): a user cannot decide a claim they own, the assessor
 and the officer who finalised an assessment cannot also decide the claim, and a payout cannot exceed
-the policy limit.
+the policy limit. The same function runs in the Review screen (to explain why a button is disabled)
+and in demo mode, so all three agree. Staff cannot close their own accounts; an administrator manages them.
 
 Read access is enforced by AppSync authorization rules. All writes go through custom mutations
 handled by the `claims-command` Lambda, which re-checks the caller's groups.
@@ -84,9 +86,10 @@ DRAFT → SUBMITTED → UNDER_REVIEW (or MORE_INFO_REQUIRED) → QUOTED → ACCE
    across ten steps. Each step is saved so the application can be resumed.
 2. On submit, a purchase invoice or valuation is uploaded (it goes through evidence scanning) and a
    deterministic **indicative premium range** is calculated. This is not cover.
-3. A senior officer begins review, then issues a **formal quote**. A quote more than 10% away from
-   the indicative premium needs an override reason.
-4. The client accepts the quote. Only then is an active **policy** created and linked to the asset.
+3. A senior officer begins review, then issues a **formal quote** with the monthly premium, **excess,
+   cover limit and exclusions**. A premium more than 10% away from the indicative one needs a reason.
+4. The client reviews those terms (and the wording version), ticks two confirmations and accepts. Only
+   then is an active **policy** created, carrying the agreed terms and the wording version accepted.
 
 ### 2. Lodging and handling a claim
 
@@ -103,10 +106,14 @@ DRAFT → ASSIGNMENT_PENDING → VALIDATING → UNDER_ASSESSMENT ⇄ INFO_NEEDED
 3. **Assessment:** an officer starts assessment, which runs the Step Functions workflow
    (validate evidence → deterministic calculation → AI summary → persist analysis). The officer may
    ask the client for more information (`INFO_NEEDED`) and logs calls and private notes.
-4. **Payout assessment:** staff enter evidence-supported covered loss, policy limit, excess and
-   depreciation. The system recommends a payout bounded by those figures. A senior **finalises** it.
-5. **Decision:** the finalised assessment appears in the Review queue. A senior approves (overriding
-   the suggested amount requires a written reason) or rejects (the client sees the reason).
+4. **Payout assessment:** an officer enters the evidence-supported covered loss, policy limit and excess
+   (pre-filled from the policy), depreciation and the evidence reviewed, and sees the live calculation.
+   The recommendation is `lowest evidenced loss − depreciation`, capped at the policy limit, less excess.
+   The officer **sends the draft for senior review**; a senior **finalises** it.
+5. **Decision:** a different senior opens the claim in the Review queue next to the calculation, risk signals
+   and AI summary, chooses an amount (no pre-fill; a button uses the assessed amount), gives a reason if it
+   differs, and confirms. Above R250,000 only a superuser can approve, and the senior can **escalate** to one.
+   A rejection shows the client the reason.
 6. **Payment:** staff prepare payment and record the bank/EFT reference, then a senior closes the case.
 
 Every step is added to a chronological timeline. Clients see only client-visible activity; internal
@@ -124,9 +131,11 @@ Prospective clients can explore every role without an account or a backend.
 - **How it works:** it is frontend-only. `src/lib/demo/client.ts` is an in-memory replacement for the
   Amplify data client, seeded by `seed.ts` and kept in `sessionStorage`. `rules.ts` mirrors the
   backend's role visibility, plus simplified pricing and payout maths. Nothing touches AWS.
-- **Fidelity:** the demo enforces who can see and do what, and lets visitors move a claim through
-  the main lifecycle. Pricing and payout figures are simplified, and some production safeguards
-  (separation of duties, the R250,000 limit, asynchronous assignment) are not modelled.
+- **Fidelity:** the demo enforces who can see and do what and lets visitors move a claim through the
+  whole lifecycle. It imports the backend's real question definitions, premium and payout formulas, and
+  decision-authority rules, so pricing, separation of duties and the R250,000 limit behave as in production.
+  Two simplifications remain: assignment is instant rather than scheduled, and files are not really stored
+  (previews are generated samples).
 - **Switch it off:** set `VITE_DEMO_ENABLED=false` at build time.
 
 ---
@@ -256,13 +265,21 @@ cannot be matched. See `Docs/CLAIM_CASE_ARCHITECTURE.md` before enabling a provi
 
 ## Frontend reference
 
-- **Navigation** is state-based (no router) and synced to `?page=`. One shared workspace adapts to
-  the signed-in role; the Review queue is hidden from clients.
+- **Navigation** is state-based (no router) and synced to `?page=`. One workspace adapts to the signed-in
+  role: `navFor` in `Workspace.tsx` decides what each role can open, and `src/lib/roles.ts` is the single
+  definition of what each group may do in the UI. `/?auth=login`, `/?auth=signup` and `/?legal=privacy`
+  are linkable; `/login` and `/signup` also work once the host rewrites them to `index.html`.
 - **Data:** `src/lib/data.ts` exports `client` (the Amplify data client, or the demo client) and
   `loadPortfolio(groups)`, which loads what that role may see. Clients and seniors read models
   directly; junior/intermediate officers and developers use the `getAssignedCasePortfolio` query.
 - **Identity:** `src/lib/identity.ts` returns the signed-in user's id, name, email and groups (or a
   demo persona).
+- **Shared wording and models:** `src/lib/status.ts` (client-facing status text, the progress tracker and the
+  one "is it covered?" answer), `copy.ts` (audience-specific labels), `workQueue.ts` (what each officer must do
+  next and what is overdue), `caseSteps.ts` ("what you can do now") and `fieldGuidance.ts` (help for every
+  underwriting question).
+- **Dialogs:** `useModal` gives every dialog Escape, a focus trap, focus restore and `aria` labelling.
+  `ConfirmModal` replaces browser prompts for decisions, reasons and references.
 - **Live updates:** the workspace subscribes to claim updates and refreshes.
 - **Uploads:** `uploadQuarantined` validates type and size, hashes the file and uploads to quarantine.
 - The frontend hides actions a role cannot use, but **permissions are enforced by the backend**.
@@ -309,7 +326,8 @@ npm run sandbox:delete         # tear the sandbox down to stop AWS costs
 | --- | --- |
 | `npm run check:region` | Guards the single-region boundary |
 | `npm run lint` / `npm run typecheck` | ESLint / TypeScript |
-| `npm test` | Vitest: backend, security and demo-mode tests |
+| `npm test` | Vitest: backend rules, security, demo mode, work queue and status models |
+| `npm run test:e2e` | Playwright end-to-end tests of every role against demo mode (no AWS needed; uses the installed Edge, or set `E2E_BROWSER=chrome`) |
 | `npm run build` | Type-check and build the frontend into `dist/` |
 | `npm run verify` | All of the above, in CI order |
 
@@ -326,8 +344,23 @@ npm run sandbox:delete         # tear the sandbox down to stop AWS costs
 - **Evidence** is quarantined, malware-scanned and re-validated server-side.
 - **Audit:** `AuditEvent` records who did what, when, with before and after values.
 - **Region:** deployments are restricted to us-east-1 locally and in the pipeline.
-- **Account closure** anonymises direct identifiers but retains claims, decisions, audit events and
-  communications under the retention policy (durations still need compliance approval).
+- **Account closure** is for clients only; it anonymises direct identifiers but retains claims, decisions,
+  audit events and communications under the retention policy (durations still need compliance approval).
+- **MFA:** optional authenticator-app (TOTP) sign-in can be switched on from Profile & security.
+- **Evidence types:** PDF, JPEG, PNG, HEIC, MP4 and MOV (10 MB documents, 50 MB video), checked by file
+  signature as well as type, then malware-scanned.
+- **Known gap:** the internal risk score, tier and fraud flag are hidden from clients in the UI, but they are
+  still readable by a client who queries the API directly. Restricting those fields at the API (field-level
+  authorization with an explicit client selection set) is the next backend change and needs a deployed test.
+
+## Legal and compliance placeholders
+
+The privacy notice, terms, complaints page, footer, policy schedule and quote-acceptance dialog read their
+company details from `src/lib/company.ts`. Every value there marked `[PLACEHOLDER]` (company name, FSP number,
+underwriter, complaints contacts, Information Officer, cooling-off and wording text) must be supplied by the
+business or its compliance adviser before launch. While any placeholder remains, the legal pages and the quote
+dialog show a visible "awaiting compliance review" notice. Debit-order set-up and email, SMS and WhatsApp
+notifications are not built; see `Docs/NOTIFICATIONS_AND_PAYMENTS.md` for what each needs first.
 
 ---
 
@@ -339,6 +372,7 @@ npm run sandbox:delete         # tear the sandbox down to stop AWS costs
 | `Docs/ASSET_UNDERWRITING_ARCHITECTURE.md` | Applications, quotes and policy creation |
 | `Docs/CLAIM_CASE_ARCHITECTURE.md` | Case identity, lifecycle, authorization, communication adapters |
 | `Docs/AMPLIFY_MIGRATION.md` | Architecture notes and production rollout checklist |
+| `Docs/NOTIFICATIONS_AND_PAYMENTS.md` | Prerequisites for WhatsApp, email, SMS and debit-order set-up |
 | `Docs/PRODUCT_SITREP.md` | Product status review (dated July 2026; parts predate the current build) |
 
 ---
