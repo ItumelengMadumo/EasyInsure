@@ -2,11 +2,12 @@ import { FormEvent } from 'react';
 import { EmptyState, Field, PageHeader, Status } from '../components/ui';
 import { client } from '../lib/data';
 import { money, shortDate, titleCase } from '../lib/format';
+import { roleFlags } from '../lib/roles';
 import type { Portfolio, PolicyApplication } from '../types';
 
 type Props = { portfolio: Portfolio; groups: string[]; refresh: () => Promise<void>; notify: (message: string) => void };
 export function PoliciesPage({ portfolio, groups, refresh, notify }: Props) {
-  const senior = groups.some((group) => ['senior_officer', 'superuser'].includes(group));
+  const senior = roleFlags(groups).isSenior;
   async function review(application: PolicyApplication, decision: string) {
     const reason = decision === 'DECLINED' ? window.prompt('Why is this application being declined? The reason is stored on the audit trail.') : undefined;
     if (decision === 'DECLINED' && !reason) return;

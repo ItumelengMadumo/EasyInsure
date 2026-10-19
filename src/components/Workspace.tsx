@@ -3,6 +3,7 @@ import { Loader } from '@aws-amplify/ui-react';
 import { client, loadPortfolio } from '../lib/data';
 import { isDemo } from '../lib/demo/mode';
 import { getIdentity } from '../lib/identity';
+import { roleFlags } from '../lib/roles';
 import { initials, titleCase } from '../lib/format';
 import type { Page, Portfolio } from '../types';
 import { OverviewPage } from '../pages/OverviewPage';
@@ -67,6 +68,14 @@ export function Workspace({ signOut }: { signOut?: () => void }) {
     return () => sub?.unsubscribe?.();
   }, [refresh]);
 
+  // Messages confirm an action; they should not linger across pages or stay forever.
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(''), 7000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+  const goTo = useCallback((next: Page) => { setNotice(''); setPage(next); }, []);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (page === 'overview') params.delete('page'); else params.set('page', page);
@@ -79,8 +88,8 @@ export function Workspace({ signOut }: { signOut?: () => void }) {
   }, [refresh]);
 
   const role = portfolio.profile?.businessRole ?? (groups[0] || 'client');
-  const isStaff = groups.some((group) => group.includes('officer') || ['developer', 'superuser'].includes(group));
-  const isDeveloper = groups.includes('developer');
+  const access = roleFlags(groups);
+  const { isStaff, isDeveloper } = access;
   const availableNav = nav.filter((item) => item.page !== 'review' || isStaff);
   const profileName = String(portfolio.profile?.displayName ?? '').trim();
   const displayName = profileName && !/^easy\s*insure(?:\s+member)?$/i.test(profileName)
@@ -94,13 +103,14 @@ export function Workspace({ signOut }: { signOut?: () => void }) {
   else if (page === 'documents') content = <DocumentsPage {...props} />;
   else if (page === 'review') content = <ReviewPage {...props} groups={groups} />;
   else if (page === 'profile') content = <ProfilePage {...props} role={role} />;
-  else content = <OverviewPage portfolio={portfolio} go={setPage} displayName={displayName} />;
+  else content = <OverviewPage portfolio={portfolio} go={goTo} displayName={displayName} />;
 
-  return <div className="app">
+  return <>
     {isDemo() && <DemoBanner />}
+    <div className="app">
     <aside className={mobileNav ? 'nav-open' : ''}>
       <div className="brand"><span>EI</span><div><strong>EasyInsure</strong><small>Claims intelligence</small></div></div>
-      <nav>{availableNav.map((item) => <div key={item.page}>{item.section && <span className="nav-section">{item.section}</span>}<button className={page === item.page ? 'active' : ''} onClick={() => { setPage(item.page); setMobileNav(false); }}><i>{item.icon}</i>{item.label}</button></div>)}</nav>
+      <nav>{availableNav.map((item) => <div key={item.page}>{item.section && <span className="nav-section">{item.section}</span>}<button className={page === item.page ? 'active' : ''} onClick={() => { goTo(item.page); setMobileNav(false); }}><i>{item.icon}</i>{item.label}</button></div>)}</nav>
       <div className="trust"><span className="pulse" /><div><strong>Human controlled</strong><p>AI assists. People decide.</p></div></div>
       <button className="signout" onClick={signOut}>↪ <span>Sign out</span></button>
     </aside>
@@ -111,7 +121,8 @@ export function Workspace({ signOut }: { signOut?: () => void }) {
         <div className="user-chip"><span className="avatar">{initials(displayName)}</span><div><strong>{displayName}</strong><small>{titleCase(role)}</small></div></div>
       </header>
       {notice && <div className="notice" role="status"><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Dismiss">×</button></div>}
-      <div className="page"><PageErrorBoundary page={page} onReset={() => setPage('overview')}>{content}</PageErrorBoundary></div>
+      <div className="page"><PageErrorBoundary page={page} onReset={() => goTo('overview')}>{content}</PageErrorBoundary></div>
     </main>
-  </div>;
+    </div>
+  </>;
 }

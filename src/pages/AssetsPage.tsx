@@ -3,6 +3,7 @@ import { EmptyState, Field, PageHeader, Status } from '../components/ui';
 import { client, uploadQuarantined } from '../lib/data';
 import { money, shortDate, titleCase } from '../lib/format';
 import { FIELD_GUIDANCE, OPTION_LABELS, SECTION_INTRO } from '../lib/fieldGuidance';
+import { useModal } from '../lib/useModal';
 import type { Portfolio } from '../types';
 
 type Props = { portfolio: Portfolio; owner: string; refresh: () => Promise<void>; notify: (message: string) => void };
@@ -76,6 +77,7 @@ export function AssetsPage({ portfolio, refresh, notify }: Props) {
   const section = steps[step];
   const fields = definition?.fields.filter((field) => field.section === section) ?? [];
   function close() { setOpen(false); setStep(0); setApplicationId(null); setAnswers({}); }
+  const wizardModal = useModal<HTMLFormElement>(open ? close : undefined, 'Asset application', open);
   function capture(form: HTMLFormElement) {
     const data = new FormData(form); const next = { ...answers };
     fields.forEach((field) => {
@@ -125,8 +127,8 @@ export function AssetsPage({ portfolio, refresh, notify }: Props) {
   const clear = () => { setQuery(''); setCategory(''); setStatus(''); setCover(''); setCondition(''); setMinValue(''); setMaxValue(''); setPremiumMin(''); setPremiumMax(''); setSort('newest'); };
   return <>
     <PageHeader eyebrow="Asset underwriting" title="Apply for cover, asset by asset." description="Build a rigorous asset record, declare relevant risk history, receive an indicative range and submit it for human underwriting." action={<button className="primary" onClick={() => setOpen(true)}>+ Start application</button>} />
-    {open && <div className="wizard-backdrop"><form className="asset-wizard" onSubmit={step === steps.length - 1 ? submit : next}>
-      <header><div><span className="eyebrow">Resumable policy application</span><h2>{titleCase(section)}</h2><p>Step {step + 1} of {steps.length}. {SECTION_INTRO[section]} Your answers are saved as you continue.</p></div><button type="button" className="icon-button" onClick={close}>×</button></header>
+    {open && <div className="wizard-backdrop"><form className="asset-wizard" {...wizardModal} onSubmit={step === steps.length - 1 ? submit : next}>
+      <header><div><span className="eyebrow">Resumable policy application</span><h2>{titleCase(section)}</h2><p>Step {step + 1} of {steps.length}. {SECTION_INTRO[section]} Your answers are saved as you continue.</p></div><button type="button" className="icon-button" onClick={close} aria-label="Close application">×</button></header>
       <div className="application-progress">{steps.map((item, index) => <span className={index <= step ? 'active' : ''} key={item}>{index + 1}<small>{titleCase(item)}</small></span>)}</div>
       <div className="wizard-body">
         {step === 0 && <div className="category-grid">{categories.map(([value, label, note]) => <button type="button" className={assetType === value ? 'selected' : ''} onClick={() => setAssetType(value)} key={value}><i>◇</i><span><strong>{label}</strong><small>{note}</small></span></button>)}</div>}

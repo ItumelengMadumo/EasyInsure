@@ -73,7 +73,14 @@ main{min-width:0;padding:0 42px 62px}.topbar{height:70px;display:flex;justify-co
 .case-composer{grid-template-columns:200px 1fr auto}
 .case-composer .field.wide+button{grid-column:1/-1;justify-self:end}
 @media(max-width:780px){.case-composer{grid-template-columns:1fr}}
-.demo-banner~main{padding-bottom:110px}
 .team-assignment-form{grid-template-columns:1fr 1.3fr auto}
 @media(max-width:780px){.team-assignment-form{grid-template-columns:1fr}}
 .policy-top .status{align-self:flex-start;height:fit-content}
+
+/* Demo strip: in the flow at the top, so it never covers content or dialog buttons */
+:root{--demo-bar:0px}
+.demo-banner{position:sticky;top:0;left:auto;bottom:auto;transform:none;width:100%;max-width:none;border-radius:0;box-shadow:0 2px 12px #0003;justify-content:center;z-index:120}
+.demo-banner .demo-collapse{margin-left:auto;border-color:transparent;color:#b8c8cf}
+.demo-pill{position:fixed;top:6px;left:50%;transform:translateX(-50%);z-index:120;border:0;border-radius:0 0 10px 10px;background:var(--navy);color:#fff;font-size:11px;font-weight:700;padding:5px 14px;box-shadow:0 4px 14px #0004}
+.app{min-height:calc(100vh - var(--demo-bar))}
+aside{top:var(--demo-bar);height:calc(100vh - var(--demo-bar))}

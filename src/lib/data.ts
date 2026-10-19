@@ -4,6 +4,7 @@ import { uploadData } from 'aws-amplify/storage';
 import type { Portfolio } from '../types';
 import { createDemoClient } from './demo/client';
 import { isDemo } from './demo/mode';
+import { roleFlags } from './roles';
 
 // Demo mode swaps in an in-memory client so prospects can explore without an account or a backend.
 export const client: any = isDemo() ? createDemoClient() : generateClient();
@@ -43,8 +44,7 @@ const values = (result: any) => result.data ?? [];
 const firstError = (results: any[]) => results.flatMap((result) => result.errors ?? [])[0];
 
 export async function loadPortfolio(groups: string[] = []): Promise<Portfolio> {
-  const senior = groups.some((group) => ['senior_officer', 'superuser'].includes(group));
-  const staff = groups.some((group) => group.includes('officer') || ['developer', 'superuser'].includes(group));
+  const { isSenior: senior, isStaff: staff } = roleFlags(groups);
 
   if (staff && !senior) {
     const [result, profiles] = await Promise.all([
