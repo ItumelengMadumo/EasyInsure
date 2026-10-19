@@ -1,9 +1,12 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { EmptyState, Field, PageHeader, Status } from '../components/ui';
+import { EmptyState, Field, PageHeader } from '../components/ui';
 import { client, uploadQuarantined } from '../lib/data';
 import { money, shortDate, titleCase } from '../lib/format';
 import { FIELD_GUIDANCE, OPTION_LABELS, SECTION_INTRO } from '../lib/fieldGuidance';
 import { useModal } from '../lib/useModal';
+import { ApplicationDetails } from '../components/ApplicationDetails';
+import { CategoryIcon } from '../components/CategoryIcon';
+import { COVER_STATES, coverLabel, coverState } from '../lib/status';
 import type { Portfolio } from '../types';
 
 type Props = { portfolio: Portfolio; owner: string; refresh: () => Promise<void>; notify: (message: string) => void };
@@ -29,7 +32,7 @@ export function AssetsPage({ portfolio, refresh, notify }: Props) {
   const params = new URLSearchParams(window.location.search);
   const [query, setQuery] = useState(params.get('assetQuery') ?? '');
   const [category, setCategory] = useState(params.get('assetType') ?? '');
-  const [status, setStatus] = useState(params.get('assetStatus') ?? '');
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [cover, setCover] = useState(params.get('cover') ?? '');
   const [condition, setCondition] = useState(params.get('condition') ?? '');
   const [minValue, setMinValue] = useState(params.get('minValue') ?? '');
@@ -47,21 +50,22 @@ export function AssetsPage({ portfolio, refresh, notify }: Props) {
 
   useEffect(() => {
     const next = new URLSearchParams(window.location.search);
-    const values = { assetQuery: query, assetType: category, assetStatus: status, cover, condition, minValue, maxValue, premiumMin, premiumMax, assetSort: sort };
+    const values = { assetQuery: query, assetType: category, cover, condition, minValue, maxValue, premiumMin, premiumMax, assetSort: sort };
     Object.entries(values).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
     window.history.replaceState(null, '', `${window.location.pathname}?${next.toString()}`);
-  }, [query, category, status, cover, condition, minValue, maxValue, premiumMin, premiumMax, sort]);
+  }, [query, category, cover, condition, minValue, maxValue, premiumMin, premiumMax, sort]);
 
   const assets = Array.isArray(portfolio.assets) ? portfolio.assets : [];
   const applications = Array.isArray(portfolio.applications) ? portfolio.applications : [];
   const premiumAssessments = Array.isArray(portfolio.premiumAssessments) ? portfolio.premiumAssessments : [];
+  const policies = Array.isArray(portfolio.policies) ? portfolio.policies : [];
   const filtered = assets.filter((item) => {
     const application = applications.find((entry) => entry.assetId === item.id);
     const assessment = premiumAssessments.find((entry) => entry.id === application?.latestAssessmentId);
     const haystack = `${item.searchText ?? ''} ${item.description} ${item.assetType} ${item.make} ${item.model} ${item.serialNumber} ${item.vin} ${item.registrationNumber} ${item.address} ${application?.applicationNumber ?? ''}`.toLowerCase();
     return (!query || haystack.includes(query.toLowerCase())) &&
-      (!category || item.assetType === category) && (!status || item.status === status) &&
-      (!cover || (cover === 'COVERED' ? Boolean(item.policyId) : !item.policyId)) &&
+      (!category || item.assetType === category) &&
+      (!cover || coverState(item, application, policies.find((entry) => entry.id === item.policyId)) === cover) &&
       (!condition || item.condition === condition) && (!minValue || item.purchasePrice >= Number(minValue)) &&
       (!maxValue || item.purchasePrice <= Number(maxValue)) &&
       (!premiumMin || (assessment?.indicativePremium ?? 0) >= Number(premiumMin)) &&
@@ -124,7 +128,7 @@ export function AssetsPage({ portfolio, refresh, notify }: Props) {
     } catch (error) { notify(error instanceof Error ? error.message : 'Submission failed.'); }
     finally { setBusy(false); }
   }
-  const clear = () => { setQuery(''); setCategory(''); setStatus(''); setCover(''); setCondition(''); setMinValue(''); setMaxValue(''); setPremiumMin(''); setPremiumMax(''); setSort('newest'); };
+  const clear = () => { setQuery(''); setCategory(''); setCover(''); setCondition(''); setMinValue(''); setMaxValue(''); setPremiumMin(''); setPremiumMax(''); setSort('newest'); };
   return <>
     <PageHeader eyebrow="Asset underwriting" title="Apply for cover, asset by asset." description="Build a rigorous asset record, declare relevant risk history, receive an indicative range and submit it for human underwriting." action={<button className="primary" onClick={() => setOpen(true)}>+ Start application</button>} />
     {open && <div className="wizard-backdrop"><form className="asset-wizard" {...wizardModal} onSubmit={step === steps.length - 1 ? submit : next}>
@@ -141,8 +145,7 @@ export function AssetsPage({ portfolio, refresh, notify }: Props) {
       <label className="search">⌕ <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by description, make, model, VIN, serial number, registration, address or application number…" aria-label="Search assets" /></label>
       <div className="filter-grid">
         <Field label="Category"><select value={category} onChange={(event) => setCategory(event.target.value)}><option value="">All categories</option>{categories.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></Field>
-        <Field label="Application state"><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">Any state</option>{['UNDER_REVIEW', 'INSURABLE', 'DECLINED', 'ARCHIVED'].map((value) => <option key={value} value={value}>{titleCase(value)}</option>)}</select></Field>
-        <Field label="Cover"><select value={cover} onChange={(event) => setCover(event.target.value)}><option value="">Covered and not covered</option><option value="COVERED">Covered by an active policy</option><option value="UNCOVERED">Not covered yet</option></select></Field>
+        <Field label="Cover status"><select value={cover} onChange={(event) => setCover(event.target.value)}><option value="">Any status</option>{COVER_STATES.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}</select></Field>
         <Field label="Condition"><select value={condition} onChange={(event) => setCondition(event.target.value)}><option value="">Any condition</option><option value="excellent">Excellent</option><option value="average">Average</option><option value="poor">Poor</option></select></Field>
         <Field label="Minimum value (ZAR)"><input value={minValue} onChange={(event) => setMinValue(event.target.value)} type="number" min="0" placeholder="e.g. 10000" /></Field>
         <Field label="Maximum value (ZAR)"><input value={maxValue} onChange={(event) => setMaxValue(event.target.value)} type="number" min="0" placeholder="e.g. 500000" /></Field>
@@ -151,13 +154,23 @@ export function AssetsPage({ portfolio, refresh, notify }: Props) {
         <Field label="Sort by"><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="newest">Newest first</option><option value="value_desc">Highest value first</option><option value="value_asc">Lowest value first</option><option value="category">Category (A to Z)</option></select></Field>
         <button className="text-button" onClick={clear}>Clear all filters</button>
       </div>
-      <div className="filter-summary"><strong>{filtered.length} results</strong>{[query, category, status, cover, condition].filter(Boolean).map((value) => <span key={value}>{value}</span>)}</div>
+      <div className="filter-summary"><strong>{filtered.length} results</strong>{[query, category && titleCase(category), cover && coverLabel(cover as never), condition && titleCase(condition)].filter(Boolean).map((value) => <span key={String(value)}>{value}</span>)}</div>
     </section>
     {filtered.length ? <div className="asset-grid">{filtered.map((asset) => {
       const application = applications.find((item) => item.assetId === asset.id);
       const estimate = premiumAssessments.find((item) => item.id === application?.latestAssessmentId);
-      return <article className="asset-card" key={asset.id}><div className={`asset-visual ${asset.assetType}`}><span>◇</span><Status value={asset.policyId ? 'COVERED' : application?.status ?? asset.status ?? 'UNDER_REVIEW'} /></div><div className="asset-body"><span className="eyebrow">{titleCase(asset.assetType)} · {application?.applicationNumber ?? 'Legacy asset'}</span><h3>{asset.description || 'Unnamed asset'}</h3><p>{[asset.make, asset.model, asset.year].filter(Boolean).join(' ') || titleCase(asset.condition)}</p><div className="asset-facts"><span><small>Declared value</small><strong>{money.format(asset.purchasePrice)}</strong></span><span><small>Indicative monthly</small><strong>{estimate ? `${money.format(estimate.rangeLow)}–${money.format(estimate.rangeHigh)}` : 'Awaiting assessment'}</strong></span><span><small>Registered</small><strong>{shortDate(asset.registeredAt ?? asset.purchaseDate)}</strong></span></div><div className="asset-footer"><span className={asset.policyId ? 'cover active' : 'cover'}>{asset.policyId ? '● Policy active' : '○ Not active cover'}</span><button className="text-button">Application details →</button></div></div></article>;
+      const policy = policies.find((item) => item.id === asset.policyId);
+      const state = coverState(asset, application, policy);
+      return <article className="asset-card" key={asset.id}><div className={`asset-visual ${asset.assetType}`}><CategoryIcon type={asset.assetType} /><span className={`cover-badge ${state.toLowerCase()}`}>{coverLabel(state)}</span></div><div className="asset-body"><span className="eyebrow">{titleCase(asset.assetType)} · {application?.applicationNumber ?? 'Legacy asset'}</span><h3>{asset.description || 'Unnamed asset'}</h3><p>{[asset.make, asset.model, asset.year].filter(Boolean).join(' ') || ' '}</p><div className="asset-facts"><span><small>Declared value</small><strong>{money.format(asset.purchasePrice)}</strong></span><span><small>Condition</small><strong>{titleCase(asset.condition)}</strong></span><span><small>Indicative monthly</small><strong>{estimate ? `${money.format(estimate.rangeLow)}–${money.format(estimate.rangeHigh)}` : 'Awaiting assessment'}</strong></span><span><small>Registered</small><strong>{shortDate(asset.registeredAt ?? asset.purchaseDate)}</strong></span></div><div className="asset-footer"><span className={state === 'COVERED' ? 'cover active' : 'cover'}>{state === 'COVERED' ? '● Policy active' : '○ Not active cover'}</span><button className="text-button" onClick={() => setDetailId(asset.id)}>Application details →</button></div></div></article>;
     })}</div> : <EmptyState title="No matching assets" copy="Clear one or more filters, or begin a detailed application for a new asset." />}
+    {detailId && (() => {
+      const asset = assets.find((item) => item.id === detailId); if (!asset) return null;
+      const application = applications.find((item) => item.assetId === asset.id);
+      const policy = policies.find((item) => item.id === asset.policyId);
+      return <ApplicationDetails key={asset.id} asset={asset} application={application} policy={policy} state={coverState(asset, application, policy)}
+        assessment={premiumAssessments.find((item) => item.id === application?.latestAssessmentId)}
+        labelFor={(key) => Object.values(definitions).flatMap((item) => item.fields).find((field) => field.key === key)?.label ?? titleCase(key)} onClose={() => setDetailId(null)} />;
+    })()}
   </>;
 }
 

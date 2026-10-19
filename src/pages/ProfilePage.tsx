@@ -1,14 +1,17 @@
 import { FormEvent } from 'react';
 import { deleteUser } from 'aws-amplify/auth';
 import { Field, PageHeader, Status } from '../components/ui';
+import { SecurityPanel } from '../components/SecurityPanel';
 import { client } from '../lib/data';
 import { isDemo } from '../lib/demo/mode';
 import { initials, titleCase } from '../lib/format';
+import { roleFlags } from '../lib/roles';
 import type { Portfolio } from '../types';
 
-type Props = { portfolio: Portfolio; role: string; refresh: () => Promise<void>; notify: (message: string) => void };
-export function ProfilePage({ portfolio, role, refresh, notify }: Props) {
+type Props = { portfolio: Portfolio; role: string; groups: string[]; refresh: () => Promise<void>; notify: (message: string) => void };
+export function ProfilePage({ portfolio, role, groups, refresh, notify }: Props) {
   const profile = portfolio.profile;
+  const { isClient } = roleFlags(groups);
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!profile) return notify('Profile provisioning is still in progress.');
     const form = new FormData(event.currentTarget); const result = await client.mutations.updateMyProfile({ displayName: String(form.get('displayName')) });
@@ -26,6 +29,12 @@ export function ProfilePage({ portfolio, role, refresh, notify }: Props) {
   }
   return <>
     <PageHeader eyebrow="Account controls" title="Profile & security." description="Manage your identity, preferences and secure access." />
-    <div className="profile-layout"><section className="profile-card panel"><div className="profile-avatar">{initials(profile?.displayName || profile?.email || 'EI')}</div><h2>{profile?.displayName || 'EasyInsure member'}</h2><p>{profile?.email || 'Profile provisioning in progress'}</p><Status value={profile?.status || 'active'} /><div className="role-block"><small>Business role</small><strong>{titleCase(role)}</strong><p>{isDemo() ? 'You are exploring a sample workspace. Permissions match the live product.' : 'Permissions are enforced by Cognito groups and backend authorization rules.'}</p></div></section><div className="profile-settings"><form className="panel form" onSubmit={save}><div><span className="eyebrow">Personal details</span><h2>How we identify you</h2></div><Field label="Display name" hint="Shown to your advisor and on your case timeline."><input name="displayName" defaultValue={profile?.displayName ?? ''} placeholder="e.g. Thandi Mokoena" /></Field><Field label="Email address" hint="This is your sign-in and where we send notices. It cannot be edited here."><input value={profile?.email ?? ''} disabled /></Field><button className="primary">Save changes</button></form><section className="panel security-list"><span className="eyebrow">Security</span><h2>Account protection</h2><div><span><strong>Secure authentication</strong><small>Managed by Amazon Cognito</small></span><Status value="active" /></div><div><span><strong>Role-based access</strong><small>{titleCase(role)} permission set</small></span><Status value="enforced" /></div><div><span><strong>Audit history</strong><small>Financial actions retained and traceable</small></span><Status value="active" /></div></section><section className="panel danger-zone"><span className="eyebrow">Account closure</span><h2>End the client relationship</h2><p>This removes login access. Claims and communication required for compliance are anonymised and archived under the configured retention policy.</p><button className="reject-button" onClick={closeAccount}>Close and delete my account</button></section></div></div>
+    <div className="profile-layout"><section className="profile-card panel"><div className="profile-avatar">{initials(profile?.displayName || profile?.email || 'EI')}</div><h2>{profile?.displayName || 'EasyInsure member'}</h2><p>{profile?.email || 'Profile provisioning in progress'}</p><Status value={profile?.status || 'active'} /><div className="role-block"><small>Business role</small><strong>{titleCase(role)}</strong><p>{isDemo() ? 'You are exploring a sample workspace. Permissions match the live product.' : 'Permissions are enforced by Cognito groups and backend authorization rules.'}</p></div></section>
+      <div className="profile-settings"><form className="panel form" onSubmit={save}><div><span className="eyebrow">Personal details</span><h2>How we identify you</h2></div><Field label="Display name" hint={isClient ? 'Shown to your advisor and on your case timeline.' : 'Shown to clients and colleagues on case timelines.'}><input name="displayName" defaultValue={profile?.displayName ?? ''} placeholder="e.g. Thandi Mokoena" /></Field><Field label="Email address" hint="This is your sign-in and where we send notices. It cannot be edited here."><input value={profile?.email ?? ''} disabled /></Field><button className="primary">Save changes</button></form>
+        <SecurityPanel role={role} notify={notify} />
+        {isClient
+          ? <section className="panel danger-zone"><span className="eyebrow">Account closure</span><h2>End the client relationship</h2><p>This removes login access. Claims and communication required for compliance are anonymised and archived under the configured retention policy.</p><button className="reject-button" onClick={closeAccount}>Close and delete my account</button></section>
+          : <section className="panel"><span className="eyebrow">Account management</span><h2>Staff accounts are managed by an administrator</h2><p>You cannot close or delete your own account. To change your role or remove your access, ask a superuser.</p></section>}
+      </div></div>
   </>;
 }

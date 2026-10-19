@@ -49,7 +49,7 @@ export function parseJson<T = any>(value: unknown): T | null {
   if (typeof value !== 'string') return value as T;
   try { return JSON.parse(value) as T; } catch { return null; }
 }
-const withTerms = (application: any) => ({ ...application, quoteTerms: parseJson(application.quoteTerms) });
+const withTerms = (application: any) => ({ ...application, quoteTerms: parseJson(application.quoteTerms), answers: parseJson(application.answers) ?? {} });
 const withFactors = (assessment: any) => ({ ...assessment, factors: parseJson(assessment.factors) ?? [] });
 const withOutputs = (analysis: any) => ({ ...analysis, deterministicOutputs: parseJson(analysis.deterministicOutputs) });
 

@@ -5,7 +5,9 @@ export type Page =
   | 'claims'
   | 'documents'
   | 'review'
-  | 'profile';
+  | 'profile'
+  | 'admin'
+  | 'diagnostics';
 
 export type Asset = {
   id: string;
@@ -64,6 +66,7 @@ export type Policy = {
   status: string;
   suggestedPremium?: number | null;
   approvedPremium?: number | null;
+  owner?: string;
   coverLimit?: number | null;
   excess?: number | null;
   exclusions?: string[] | null;
@@ -90,10 +93,12 @@ export type Claim = {
   suggestedPayout?: number | null;
   approvedPayout?: number | null;
   assignedOfficerId?: string | null;
+  approvedBy?: string | null;
   currentMilestone?: string | null;
   submittedAt?: string | null;
   closedAt?: string | null;
   lastActivityAt?: string | null;
+  assignmentDueAt?: string | null;
 };
 
 export type ClaimDocument = {
@@ -119,6 +124,7 @@ export type ClaimAssessment = {
   policyLimit: number; excess: number; depreciation: number; exclusions: string[];
   recommendedPayout: number; status: string; overrideReason?: string | null;
   assessorSubject?: string; assessorDisplayNameSnapshot?: string; createdAtSnapshot?: string; finalizedAt?: string | null; finalizedBySubject?: string | null;
+  submittedAt?: string | null; submissionNote?: string | null;
 };
 
 export type RiskFactor = { name: string; applied: boolean; weight: number; reason: string };

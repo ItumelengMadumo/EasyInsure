@@ -65,3 +65,7 @@ export function coverState(asset: Pick<Asset, 'policyId' | 'status'>, applicatio
     default: return asset.status === 'DECLINED' ? 'DECLINED' : 'NOT_COVERED';
   }
 }
+
+/** Engine thresholds (insurance-engine/engines.py): below 0.2 low, 0.6 medium, 1 high, otherwise critical. */
+export const riskLevel = (score: number): 'low' | 'medium' | 'high' | 'critical' =>
+  score < 0.2 ? 'low' : score < 0.6 ? 'medium' : score < 1 ? 'high' : 'critical';
