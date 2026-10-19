@@ -91,7 +91,7 @@ const schema = a.schema({
     status: a.ref('PolicyApplicationStatus').required(), answers: a.json().required(),
     completedSections: a.string().array().required(), missingInformation: a.string().array().required(),
     underwritingProfileId: a.id(), latestAssessmentId: a.id(), quotedPremium: a.float(),
-    quoteExpiresAt: a.datetime(), submittedAt: a.datetime(), acceptedAt: a.datetime(),
+    quoteExpiresAt: a.datetime(), quoteTerms: a.json(), submittedAt: a.datetime(), acceptedAt: a.datetime(), acceptedWordingVersion: a.string(),
     assignedUnderwriterId: a.string(), idempotencyKey: a.string().required(), lastUpdatedAt: a.datetime().required(),
   }).secondaryIndexes((index) => [
     index('owner').sortKeys(['lastUpdatedAt']), index('status').sortKeys(['lastUpdatedAt']),
@@ -146,6 +146,10 @@ const schema = a.schema({
     approvedPremium: a.float(),
     approvedBy: a.string(),
     approvalTimestamp: a.datetime(),
+    coverLimit: a.float(),
+    excess: a.float(),
+    exclusions: a.string().array(),
+    wordingVersion: a.string(),
   }).secondaryIndexes((index) => [index('owner'), index('policyNumber')]).authorization((allow) => [
     allow.ownerDefinedIn('owner').to(['read']),
     allow.groups(senior).to(['read']),
@@ -386,7 +390,8 @@ const schema = a.schema({
     recommendedPayout: a.float().required(), calculationVersion: a.string().required(), status: a.string().required(),
     assessorSubject: a.string().required(), assessorDisplayNameSnapshot: a.string().required(),
     assessorRoleSnapshot: a.string().required(), overrideReason: a.string(), createdAtSnapshot: a.datetime().required(),
-    finalizedAt: a.datetime(), finalizedBySubject: a.string(), idempotencyKey: a.string().required(), correlationId: a.string().required(),
+    finalizedAt: a.datetime(), finalizedBySubject: a.string(), submittedAt: a.datetime(), submissionNote: a.string(),
+    idempotencyKey: a.string().required(), correlationId: a.string().required(),
   }).secondaryIndexes((index) => [index('claimId').sortKeys(['version']), index('idempotencyKey')]).authorization((allow) => [
     allow.ownerDefinedIn('claimOwner').to(['read']), allow.groups(senior).to(['read']),
   ]),
@@ -461,10 +466,11 @@ const schema = a.schema({
   }).returns(a.ref('PolicyApplication')).authorization((allow) => [allow.groups(senior)]).handler(a.handler.function(claimsCommand)),
   issuePolicyQuote: a.mutation().arguments({
     applicationId: a.id().required(), monthlyPremium: a.float().required(), overrideReason: a.string(),
+    excess: a.float().required(), coverLimit: a.float().required(), exclusions: a.string().array(),
     idempotencyKey: a.string().required(), correlationId: a.string().required(),
   }).returns(a.ref('PolicyApplication')).authorization((allow) => [allow.groups(senior)]).handler(a.handler.function(claimsCommand)),
   acceptPolicyQuote: a.mutation().arguments({
-    applicationId: a.id().required(), idempotencyKey: a.string().required(), correlationId: a.string().required(),
+    applicationId: a.id().required(), acceptedWordingVersion: a.string().required(), idempotencyKey: a.string().required(), correlationId: a.string().required(),
   }).returns(a.ref('Policy')).authorization((allow) => [allow.authenticated()]).handler(a.handler.function(claimsCommand)),
 
   createClaimDraft: a.mutation().arguments({
@@ -539,6 +545,9 @@ const schema = a.schema({
     repairEstimate: a.float(), replacementEstimate: a.float(), policyLimit: a.float().required(), excess: a.float().required(),
     depreciation: a.float().required(), exclusions: a.string().array().required(),
     idempotencyKey: a.string().required(), correlationId: a.string().required(),
+  }).returns(a.ref('ClaimAssessment')).authorization((allow) => [allow.groups(staff)]).handler(a.handler.function(claimsCommand)),
+  submitClaimAssessment: a.mutation().arguments({
+    assessmentId: a.id().required(), note: a.string(), idempotencyKey: a.string().required(), correlationId: a.string().required(),
   }).returns(a.ref('ClaimAssessment')).authorization((allow) => [allow.groups(staff)]).handler(a.handler.function(claimsCommand)),
   finalizeClaimPayoutAssessment: a.mutation().arguments({
     assessmentId: a.id().required(), overridePayout: a.float(), overrideReason: a.string(),

@@ -111,9 +111,9 @@ export function AssetsPage({ portfolio, refresh, notify }: Props) {
     try {
       const data = new FormData(event.currentTarget); const evidence = data.get('valuationEvidence');
       if (!(evidence instanceof File) || !evidence.size) throw new Error('A purchase invoice or valuation is required.');
-      const { objectKey, checksum } = await uploadQuarantined(`applications/${applicationId}`, evidence);
+      const { objectKey, checksum, mediaType } = await uploadQuarantined(`applications/${applicationId}`, evidence);
       const document = await client.mutations.registerApplicationDocument({
-        applicationId, category: 'VALUATION', objectKey, fileName: evidence.name, mediaType: evidence.type,
+        applicationId, category: 'VALUATION', objectKey, fileName: evidence.name, mediaType,
         byteSize: evidence.size, checksum, correlationId: crypto.randomUUID(),
       });
       if (document.errors?.length) throw new Error(document.errors[0].message);

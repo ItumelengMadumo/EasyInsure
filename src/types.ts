@@ -42,7 +42,11 @@ export type PolicyApplication = {
   assetType: string; schemaVersion: string; status: string; answers: Record<string, unknown>;
   completedSections: string[]; missingInformation: string[]; latestAssessmentId?: string | null;
   quotedPremium?: number | null; quoteExpiresAt?: string | null; submittedAt?: string | null; lastUpdatedAt: string;
+  quoteTerms?: QuoteTerms | null; acceptedAt?: string | null;
 };
+
+/** What the client is agreeing to when they accept a quote. Captured by the underwriter at quote time. */
+export type QuoteTerms = { excess: number; coverLimit: number; exclusions: string[]; wordingVersion: string };
 
 export type PremiumAssessment = {
   id: string; applicationId: string; indicativePremium: number; rangeLow: number; rangeHigh: number;
@@ -60,6 +64,10 @@ export type Policy = {
   status: string;
   suggestedPremium?: number | null;
   approvedPremium?: number | null;
+  coverLimit?: number | null;
+  excess?: number | null;
+  exclusions?: string[] | null;
+  wordingVersion?: string | null;
 };
 
 export type Claim = {
@@ -67,6 +75,7 @@ export type Claim = {
   owner: string;
   claimNumber?: string | null;
   policeCaseNumber?: string | null;
+  incidentLocation?: string | null;
   policyId: string;
   assetId: string;
   claimType: string;
@@ -90,6 +99,7 @@ export type Claim = {
 export type ClaimDocument = {
   id: string;
   claimId: string;
+  objectKey?: string;
   fileName: string;
   mediaType: string;
   byteSize: number;
@@ -108,6 +118,22 @@ export type ClaimAssessment = {
   coveredLossValue: number; repairEstimate?: number | null; replacementEstimate?: number | null;
   policyLimit: number; excess: number; depreciation: number; exclusions: string[];
   recommendedPayout: number; status: string; overrideReason?: string | null;
+  assessorSubject?: string; assessorDisplayNameSnapshot?: string; createdAtSnapshot?: string; finalizedAt?: string | null; finalizedBySubject?: string | null;
+};
+
+export type RiskFactor = { name: string; applied: boolean; weight: number; reason: string };
+export type FraudSignal = { signalName: string; triggered: boolean; severity: string; details: string };
+/** Deterministic checks plus the advisory AI summary stored for a claim (senior-readable). */
+export type ClaimAnalysis = {
+  id: string; claimId: string; version: number; aiSummary?: string | null; recommendation?: string | null;
+  inconsistencies?: string[] | null; missingInformation?: string[] | null; warnings?: string[] | null;
+  confidence?: number | null; modelId?: string | null; inferenceStatus: string;
+  deterministicOutputs?: { tier?: { tier: number }; risk?: { totalRiskScore: number; riskLevel: string; factors: RiskFactor[] }; fraud?: { isFlagged: boolean; overallRisk: string; recommendation: string; signals: FraudSignal[] } } | null;
+};
+
+export type ProcessingJob = {
+  id: string; claimId: string; status: string; currentStep?: string | null; attempts?: number | null;
+  errorCategory?: string | null; errorMessage?: string | null; startedAt?: string | null; completedAt?: string | null; createdAt?: string;
 };
 
 export type ClaimActivity = {
@@ -148,6 +174,8 @@ export type Portfolio = {
   communications: ClaimCommunication[];
   internalNotes: ClaimInternalNote[];
   claimAssessments: ClaimAssessment[];
+  analyses: ClaimAnalysis[];
+  jobs: ProcessingJob[];
   profiles: Profile[];
   profile: Profile | null;
 };

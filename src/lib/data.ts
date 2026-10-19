@@ -3,6 +3,7 @@ import { fetchAuthSession } from 'aws-amplify/auth';
 import { uploadData } from 'aws-amplify/storage';
 import type { Portfolio } from '../types';
 import { createDemoClient } from './demo/client';
+import { ALLOWED_MEDIA_TYPES, MEDIA_TYPE_LABEL, maxBytesFor, resolveMediaType } from '../../amplify/functions/claims-command/domain';
 import { isDemo } from './demo/mode';
 import { roleFlags } from './roles';
 
@@ -22,23 +23,22 @@ async function listAll(model: any) {
   return { data, errors: [] };
 }
 
-const ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
-
 // Uploads land in quarantine/{identityId}/{path}/; the server registers the document and
 // only a malware-scanned copy is ever promoted to evidence/.
 export async function uploadQuarantined(path: string, file: File) {
-  if (file.size > 10 * 1024 * 1024 || !ALLOWED_TYPES.includes(file.type)) {
-    throw new Error('Documents must be PDF, JPEG or PNG and under 10 MB.');
+  const mediaType = resolveMediaType(file.name, file.type);
+  if (!ALLOWED_MEDIA_TYPES.includes(mediaType) || file.size > maxBytesFor(mediaType)) {
+    throw new Error(`Files must be ${MEDIA_TYPE_LABEL}, up to ${maxBytesFor(mediaType) / 1024 / 1024} MB each.`);
   }
-  if (isDemo()) return { objectKey: `demo/${crypto.randomUUID()}-${file.name}`, checksum: 'demo' };
+  if (isDemo()) return { objectKey: `demo/${crypto.randomUUID()}-${file.name}`, checksum: 'demo', mediaType };
   const { identityId } = await fetchAuthSession();
   if (!identityId) throw new Error('Your session has expired. Please sign in again.');
   const safeName = file.name.normalize('NFKD').replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^\.+/, '').slice(-120) || 'document';
   const objectKey = `quarantine/${identityId}/${path}/${crypto.randomUUID()}-${safeName}`;
   const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
   const checksum = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-  await uploadData({ path: objectKey, data: file, options: { contentType: file.type } }).result;
-  return { objectKey, checksum };
+  await uploadData({ path: objectKey, data: file, options: { contentType: mediaType } }).result;
+  return { objectKey, checksum, mediaType };
 }
 const values = (result: any) => result.data ?? [];
 const firstError = (results: any[]) => results.flatMap((result) => result.errors ?? [])[0];
@@ -55,7 +55,7 @@ export async function loadPortfolio(groups: string[] = []): Promise<Portfolio> {
     const caseData = (result.data ?? {}) as any;
     return {
       assets: caseData.assets ?? [], policies: caseData.policies ?? [], profiles: values(profiles),
-      applications: [], premiumAssessments: [],
+      applications: [], premiumAssessments: [], analyses: [], jobs: caseData.jobs ?? [],
       claims: caseData.claims ?? [], documents: caseData.documents ?? [],
       assignments: caseData.assignments ?? [], activities: caseData.activities ?? [],
       communications: caseData.communications ?? [], internalNotes: caseData.internalNotes ?? [],
@@ -77,7 +77,8 @@ export async function loadPortfolio(groups: string[] = []): Promise<Portfolio> {
   ];
   if (senior) requests.push(listAll(client.models.ClaimInternalNote));
   if (senior) requests.push(listAll(client.models.ClaimAssessment));
-  const [claims, documents, assignments, activities, communications, internalNotes, claimAssessments] = await Promise.all(requests);
+  if (senior) requests.push(listAll(client.models.ClaimAnalysis));
+  const [claims, documents, assignments, activities, communications, internalNotes, claimAssessments, analyses] = await Promise.all(requests);
   const error = firstError([claims, documents, assignments, activities, communications, ...(senior ? [internalNotes] : [])]);
   if (error) throw new Error(error.message);
   return {
@@ -86,6 +87,7 @@ export async function loadPortfolio(groups: string[] = []): Promise<Portfolio> {
     claims: values(claims), documents: values(documents), assignments: values(assignments),
     activities: values(activities), communications: values(communications),
     internalNotes: senior ? values(internalNotes) : [], claimAssessments: senior ? values(claimAssessments) : [],
+    analyses: senior ? values(analyses) : [], jobs: [],
     profile: values(profiles)[0] ?? null,
   };
 }

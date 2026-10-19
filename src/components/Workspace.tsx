@@ -18,7 +18,7 @@ import { DemoBanner } from './DemoBanner';
 
 const emptyPortfolio: Portfolio = {
   assets: [], policies: [], applications: [], premiumAssessments: [], claims: [], documents: [], assignments: [],
-  activities: [], communications: [], internalNotes: [], claimAssessments: [], profiles: [], profile: null,
+  activities: [], communications: [], internalNotes: [], claimAssessments: [], analyses: [], jobs: [], profiles: [], profile: null,
 };
 const nav: { page: Page; label: string; icon: string; section?: string }[] = [
   { page: 'overview', label: 'Overview', icon: '⌂', section: 'Workspace' },

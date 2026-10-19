@@ -61,8 +61,26 @@ export function parseQuarantineKey(objectKey: string):
   return { identityId: segments[0], kind: 'claim', parentId: segments[1], fileName: segments[2] };
 }
 
-export const ALLOWED_MEDIA_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
+/** Bump when the policy wording changes; quotes and acceptances record the version agreed. */
+export const POLICY_WORDING_VERSION = '2026-01';
+
+// Phone photos (HEIC/HEIF) and short videos (MP4/MOV) are accepted as evidence alongside PDF and
+// JPEG/PNG. Videos get a larger cap than documents.
+export const ALLOWED_MEDIA_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/heic', 'image/heif', 'video/mp4', 'video/quicktime'];
 export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
+export const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+export const maxBytesFor = (mediaType: string) => (mediaType.startsWith('video/') ? MAX_VIDEO_BYTES : MAX_DOCUMENT_BYTES);
+export const MEDIA_TYPE_LABEL = 'PDF, JPEG, PNG, HEIC, MP4 or MOV';
+
+// Browsers often report an empty type for HEIC and MOV files, so fall back to the extension.
+const EXTENSION_TYPES: Record<string, string> = {
+  pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+  heic: 'image/heic', heif: 'image/heif', mp4: 'video/mp4', mov: 'video/quicktime',
+};
+export function resolveMediaType(fileName: string, declared: string) {
+  if (ALLOWED_MEDIA_TYPES.includes(declared)) return declared;
+  return EXTENSION_TYPES[fileName.split('.').pop()?.toLowerCase() ?? ''] ?? declared;
+}
 
 // Checks the file's leading bytes rather than trusting the client-declared content type.
 export function matchesFileSignature(bytes: Uint8Array, mediaType: string) {
@@ -70,6 +88,11 @@ export function matchesFileSignature(bytes: Uint8Array, mediaType: string) {
   if (mediaType === 'application/pdf') return starts([0x25, 0x50, 0x44, 0x46, 0x2d]);
   if (mediaType === 'image/jpeg') return starts([0xff, 0xd8, 0xff]);
   if (mediaType === 'image/png') return starts([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  // ISO base media files (HEIC, MP4, MOV) carry 'ftyp' at byte 4, followed by a brand.
+  const hasFtyp = [0x66, 0x74, 0x79, 0x70].every((byte, index) => bytes[4 + index] === byte);
+  const brand = String.fromCharCode(...Array.from(bytes.slice(8, 12)));
+  if (mediaType === 'image/heic' || mediaType === 'image/heif') return hasFtyp && ['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'mif1', 'msf1', 'heif'].includes(brand);
+  if (mediaType === 'video/mp4' || mediaType === 'video/quicktime') return hasFtyp;
   return false;
 }
 

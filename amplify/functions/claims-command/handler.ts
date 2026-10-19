@@ -5,7 +5,7 @@ import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtim
 import { SFNClient, StartExecutionCommand } from '@aws-sdk/client-sfn';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import {
-  ACCEPTED_DOCUMENT_STATES, ALLOWED_MEDIA_TYPES, MAX_DOCUMENT_BYTES, assertDecisionAuthority, canManuallyTransition,
+  ACCEPTED_DOCUMENT_STATES, ALLOWED_MEDIA_TYPES, MEDIA_TYPE_LABEL, POLICY_WORDING_VERSION, assertDecisionAuthority, maxBytesFor, canManuallyTransition,
   coerceJsonObject, parseQuarantineKey, resolveProfileIdentity, validateDraftPrerequisites,
 } from './domain';
 import { ASSET_SCHEMA_VERSION, PREMIUM_FORMULA_VERSION, calculatePremium, calculateRecommendedPayout, categoryDefinitions, validateApplication } from './underwriting';
@@ -68,12 +68,12 @@ const CLAIM_FIELDS = `id owner claimNumber policeCaseNumber policyId assetId cla
   approvedPayout approvedBy approvalTimestamp assignedOfficerId currentMilestone submittedAt closedAt lastActivityAt
   assignmentDueAt idempotencyKey createdAt updatedAt`;
 const APPLICATION_FIELDS = `id owner applicationNumber assetId assetType schemaVersion status answers completedSections
-  missingInformation underwritingProfileId latestAssessmentId quotedPremium quoteExpiresAt submittedAt acceptedAt
+  missingInformation underwritingProfileId latestAssessmentId quotedPremium quoteExpiresAt quoteTerms submittedAt acceptedAt acceptedWordingVersion
   assignedUnderwriterId idempotencyKey lastUpdatedAt createdAt updatedAt`;
 const ASSESSMENT_FIELDS = `id claimId claimOwner version evidenceReviewed coveredLossValue repairEstimate replacementEstimate
   policyLimit excess depreciation exclusions recommendedPayout calculationVersion status assessorSubject
   assessorDisplayNameSnapshot assessorRoleSnapshot overrideReason createdAtSnapshot finalizedAt finalizedBySubject
-  idempotencyKey correlationId createdAt updatedAt`;
+  submittedAt submissionNote idempotencyKey correlationId createdAt updatedAt`;
 
 // Optimistic concurrency: the write only lands if `status` still holds the value we
 // validated against, so two officers cannot both approve, or approve and reject.
@@ -104,12 +104,12 @@ async function audit(entityId: string, action: string, actor: Actor, previousVal
   if (errors?.length) throw new Error(`Audit write failed: ${errors[0].message}`);
 }
 
-async function activity(claim: any, eventType: string, milestone: string, summary: string, actor: Actor, correlationId: string, detail?: string) {
+async function activity(claim: any, eventType: string, milestone: string, summary: string, actor: Actor, correlationId: string, detail?: string, visibility: 'CLIENT_VISIBLE' | 'INTERNAL' = 'CLIENT_VISIBLE') {
   const occurredAt = now();
   const { errors } = await client.models.ClaimActivity.create({
     owner: claim.owner, claimId: claim.id, eventId: randomUUID(), eventType, milestone,
     actorSubject: actor.subject, actorDisplayNameSnapshot: actor.displayName, actorRoleSnapshot: actor.role,
-    summary, detail, visibility: 'CLIENT_VISIBLE', occurredAt, correlationId,
+    summary, detail, visibility, occurredAt, correlationId,
   });
   if (errors?.length) throw new Error(`Activity write failed: ${errors[0].message}`);
   await client.models.Claim.update({ id: claim.id, lastActivityAt: occurredAt, currentMilestone: milestone });
@@ -327,11 +327,17 @@ export const handler = async (event: ResolverEvent) => {
     if (!latest?.data) throw new Error('An indicative premium assessment is required before quoting');
     const indicative = latest.data.indicativePremium;
     if (Math.abs(premium - indicative) > indicative * 0.1 && !String(args.overrideReason ?? '').trim()) throw new Error('An override reason is required outside the indicative range');
+    // The client agrees to these terms when they accept, so they are fixed at quote time.
+    const excess = Number(args.excess); const coverLimit = Number(args.coverLimit);
+    if (!Number.isFinite(excess) || excess < 0) throw new Error('Enter the excess the client will carry (zero or more)');
+    if (!Number.isFinite(coverLimit) || coverLimit <= 0) throw new Error('Enter the cover limit for this asset');
+    const exclusions = ((args.exclusions as unknown[] | undefined) ?? []).map((item) => String(item).trim()).filter(Boolean);
     const result = await client.models.PolicyApplication.update({
       id: application.data.id, status: 'QUOTED', quotedPremium: premium,
+      quoteTerms: { excess, coverLimit, exclusions, wordingVersion: POLICY_WORDING_VERSION },
       quoteExpiresAt: new Date(Date.now() + 30 * 86400_000).toISOString(), lastUpdatedAt: now(),
     });
-    await audit(application.data.id, 'policy_quote_issued', actor, { status: application.data.status }, { status: 'QUOTED', premium, overrideReason: args.overrideReason }, correlationId);
+    await audit(application.data.id, 'policy_quote_issued', actor, { status: application.data.status }, { status: 'QUOTED', premium, excess, coverLimit, exclusions, wordingVersion: POLICY_WORDING_VERSION, overrideReason: args.overrideReason }, correlationId);
     return result.data;
   }
 
@@ -340,22 +346,26 @@ export const handler = async (event: ResolverEvent) => {
     if (!application.data || application.data.owner !== actor.subject) throw new Error('Application not found');
     if (application.data.status !== 'QUOTED' || !application.data.assetId || !application.data.quotedPremium) throw new Error('No active quote is available');
     if (application.data.quoteExpiresAt && application.data.quoteExpiresAt < now()) throw new Error('The quote has expired');
+    const terms = typeof application.data.quoteTerms === 'string' ? JSON.parse(application.data.quoteTerms) : application.data.quoteTerms;
+    if (!terms) throw new Error('This quote was issued before policy terms were recorded. Ask underwriting to issue it again.');
+    if (String(args.acceptedWordingVersion ?? '') !== terms.wordingVersion) throw new Error('The policy wording has changed. Review the latest terms and accept again.');
     const acceptedAt = now();
     // Claim the quote first so a double-click or retry cannot create two policies.
-    await updateIfStatus('PolicyApplication', APPLICATION_FIELDS, { id: application.data.id, status: 'ACCEPTED', acceptedAt, lastUpdatedAt: acceptedAt }, 'QUOTED');
+    await updateIfStatus('PolicyApplication', APPLICATION_FIELDS, { id: application.data.id, status: 'ACCEPTED', acceptedAt, acceptedWordingVersion: terms.wordingVersion, lastUpdatedAt: acceptedAt }, 'QUOTED');
     const policy = await client.models.Policy.create({
       owner: actor.subject, policyNumber: reference('EIP'),
       valuationType: 'ACTUAL_CASH_VALUE', coverageDetails: 'Comprehensive cover subject to the accepted quote and policy schedule.',
       durationMonths: 12, startDate: acceptedAt, endDate: new Date(Date.now() + 365 * 86400_000).toISOString(),
       status: 'ACTIVE', suggestedPremium: application.data.quotedPremium, approvedPremium: application.data.quotedPremium,
       approvedBy: 'underwriting', approvalTimestamp: acceptedAt,
+      coverLimit: terms.coverLimit, excess: terms.excess, exclusions: terms.exclusions ?? [], wordingVersion: terms.wordingVersion,
     });
     if (policy.errors?.length || !policy.data) {
       await client.models.PolicyApplication.update({ id: application.data.id, status: 'QUOTED', acceptedAt: null, lastUpdatedAt: now() });
       throw new Error(policy.errors?.[0]?.message ?? 'Policy activation failed');
     }
     await client.models.Asset.update({ id: application.data.assetId, policyId: policy.data.id, status: 'INSURABLE', lastUpdatedAt: acceptedAt });
-    await audit(application.data.id, 'policy_quote_accepted', actor, { status: 'QUOTED' }, { status: 'ACCEPTED', policyId: policy.data.id }, correlationId);
+    await audit(application.data.id, 'policy_quote_accepted', actor, { status: 'QUOTED' }, { status: 'ACCEPTED', policyId: policy.data.id, acceptedWordingVersion: terms.wordingVersion, premium: application.data.quotedPremium }, correlationId);
     return policy.data;
   }
 
@@ -407,8 +417,8 @@ export const handler = async (event: ResolverEvent) => {
     const mediaType = String(args.mediaType);
     const byteSize = Number(args.byteSize);
     const checksum = String(args.checksum).toLowerCase();
-    if (!ALLOWED_MEDIA_TYPES.includes(mediaType)) throw new Error('Documents must be PDF, JPEG or PNG');
-    if (!Number.isInteger(byteSize) || byteSize <= 0 || byteSize > MAX_DOCUMENT_BYTES) throw new Error('Documents must be under 10 MB');
+    if (!ALLOWED_MEDIA_TYPES.includes(mediaType)) throw new Error(`Files must be ${MEDIA_TYPE_LABEL}`);
+    if (!Number.isInteger(byteSize) || byteSize <= 0 || byteSize > maxBytesFor(mediaType)) throw new Error(`Files must be under ${maxBytesFor(mediaType) / 1024 / 1024} MB`);
     if (!/^[a-f0-9]{64}$/.test(checksum)) throw new Error('A SHA-256 checksum is required');
     const category = String(args.category).toUpperCase();
     const fileName = clean(args.fileName, 'fileName').slice(0, 200);
@@ -453,7 +463,8 @@ export const handler = async (event: ResolverEvent) => {
         owner: 'redacted', policyId: claim.policyId, assetId: claim.assetId, claimType: claim.claimType,
         description: 'Redacted for diagnostics', incidentDate: claim.incidentDate,
       }));
-      return { claims: diagnostics, assignments: [], activities: [], communications: [], documents: [], internalNotes: [], assets: [], policies: [], claimAssessments: [] };
+      const jobs = await listAll(client.models.ProcessingJob, {});
+      return { claims: diagnostics, assignments: [], activities: [], communications: [], documents: [], internalNotes: [], assets: [], policies: [], claimAssessments: [], jobs: jobs.data };
     }
     if (isSenior(actor)) {
       const [claims, assignments, activities, communications, documents, notes, assets, policies, assessments] = await Promise.all([
@@ -492,6 +503,14 @@ export const handler = async (event: ResolverEvent) => {
       claimAssessments: bundles.flatMap((item) => item.assessments),
       assets: [...new Map(bundles.filter((item) => item.asset).map((item) => [item.asset.id, item.asset])).values()],
       policies: [...new Map(bundles.filter((item) => item.policy).map((item) => [item.policy.id, item.policy])).values()],
+      // Officers can only list their own profile, so they receive just the names of their clients.
+      clientProfiles: await (async () => {
+        const owners = new Set(bundles.map((item) => item.claim?.owner).filter(Boolean));
+        const profiles = owners.size ? await listAll(client.models.UserProfile, {}) : { data: [] as any[] };
+        return profiles.data.filter((profile: any) => owners.has(profile.owner)).map((profile: any) => ({
+          id: profile.id, owner: profile.owner, displayName: profile.displayName, businessRole: 'client', status: profile.status, email: '',
+        }));
+      })(),
     };
   }
 
@@ -521,6 +540,7 @@ export const handler = async (event: ResolverEvent) => {
   }
 
   if (event.fieldName === 'requestAccountClosure') {
+    if (isStaff(actor)) throw new Error('Staff accounts are managed by an administrator');
     const key = clean(args.idempotencyKey, 'idempotencyKey');
     const existing = await listAll(client.models.AccountClosureRequest, { filter: { correlationId: { eq: key }, owner: { eq: actor.subject } } });
     if (existing.data[0]) return existing.data[0];
@@ -782,11 +802,28 @@ export const handler = async (event: ResolverEvent) => {
     return result.data;
   }
 
+  if (event.fieldName === 'submitClaimAssessment') {
+    requireCaseOfficer(actor);
+    const draft = await client.models.ClaimAssessment.get({ id: String(args.assessmentId) });
+    if (!draft.data) throw new Error('Assessment not found');
+    if (draft.data.status !== 'DRAFT') throw new Error('Only a draft assessment can be sent for senior review');
+    const draftClaim = await getClaim(draft.data.claimId);
+    if (!(await canAccessClaim(actor, draftClaim))) throw new Error('Claim assignment access required');
+    if (draftClaim.status !== 'UNDER_ASSESSMENT') throw new Error('Claim must be under assessment');
+    if (draft.data.assessorSubject !== actor.subject && !isSenior(actor)) throw new Error('Only the officer who prepared an assessment can send it for review');
+    const note = String(args.note ?? '').trim() || undefined;
+    const submittedAt = now();
+    const submitted = await updateIfStatus('ClaimAssessment', ASSESSMENT_FIELDS, { id: draft.data.id, status: 'SUBMITTED', submittedAt, submissionNote: note }, 'DRAFT');
+    await activity(draftClaim, 'ASSESSMENT_SUBMITTED', 'UNDER_ASSESSMENT', `${actor.displayName} sent the payout assessment for senior review.`, actor, correlationId, note, 'INTERNAL');
+    await audit(draftClaim.id, 'claim_assessment_submitted', actor, { status: 'DRAFT' }, { status: 'SUBMITTED', assessmentId: draft.data.id, note }, correlationId);
+    return submitted;
+  }
+
   if (event.fieldName === 'finalizeClaimPayoutAssessment') {
     requireSenior(actor);
     const assessment = await client.models.ClaimAssessment.get({ id: String(args.assessmentId) });
     if (!assessment.data) throw new Error('Assessment not found');
-    if (assessment.data.status !== 'DRAFT') throw new Error('This assessment has already been finalized');
+    if (!['DRAFT', 'SUBMITTED'].includes(assessment.data.status)) throw new Error('This assessment has already been finalized');
     const claimBeforeFinalize = await getClaim(assessment.data.claimId);
     if (claimBeforeFinalize.status !== 'UNDER_ASSESSMENT') throw new Error('Claim must be under assessment');
     if (claimBeforeFinalize.owner === actor.subject) throw new Error('You cannot finalize an assessment on your own claim');
@@ -798,7 +835,7 @@ export const handler = async (event: ResolverEvent) => {
     const finalized = await updateIfStatus('ClaimAssessment', ASSESSMENT_FIELDS, {
       id: assessment.data.id, recommendedPayout: payout, overrideReason: args.overrideReason ? String(args.overrideReason) : undefined,
       status: 'FINALIZED', finalizedAt: now(), finalizedBySubject: actor.subject,
-    }, 'DRAFT');
+    }, assessment.data.status);
     const result = { data: finalized };
     await updateIfStatus('Claim', CLAIM_FIELDS, { id: assessment.data.claimId, suggestedPayout: payout, status: 'DECISION_PENDING', currentMilestone: 'DECISION_PENDING', lastActivityAt: now() }, 'UNDER_ASSESSMENT');
     const assessmentClaim = await getClaim(assessment.data.claimId);

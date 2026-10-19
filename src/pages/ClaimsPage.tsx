@@ -1,7 +1,8 @@
 import { FormEvent, useState } from 'react';
 import { CaseDrawer } from '../components/CaseFile';
 import { ClaimTable, Field, PageHeader } from '../components/ui';
-import { client, uploadQuarantined } from '../lib/data';
+import { client } from '../lib/data';
+import { uploadClaimFile } from '../lib/uploads';
 import { titleCase } from '../lib/format';
 import { roleFlags } from '../lib/roles';
 import type { Claim, Portfolio } from '../types';
@@ -10,15 +11,6 @@ type Props = {
   portfolio: Portfolio; owner: string; groups: string[];
   refresh: () => Promise<void>; notify: (message: string) => void;
 };
-
-async function uploadClaimFile(claimId: string, file: File, category: string) {
-  const { objectKey, checksum } = await uploadQuarantined(`${claimId}`, file);
-  const document = await client.mutations.registerClaimDocument({
-    claimId, objectKey, fileName: file.name, mediaType: file.type, byteSize: file.size,
-    checksum, category, correlationId: crypto.randomUUID(),
-  });
-  if (document.errors?.length) throw new Error(document.errors[0].message);
-}
 
 export function ClaimsPage({ portfolio, owner, groups, refresh, notify }: Props) {
   const [open, setOpen] = useState(false);

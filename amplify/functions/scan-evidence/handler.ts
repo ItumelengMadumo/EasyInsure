@@ -4,7 +4,7 @@ import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtim
 import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { createHash } from 'node:crypto';
 import type { S3Event } from 'aws-lambda';
-import { ALLOWED_MEDIA_TYPES, MAX_DOCUMENT_BYTES, matchesFileSignature, parseQuarantineKey } from '../claims-command/domain';
+import { ALLOWED_MEDIA_TYPES, matchesFileSignature, maxBytesFor, parseQuarantineKey } from '../claims-command/domain';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(process.env as never);
 Amplify.configure(resourceConfig, libraryOptions);
@@ -80,7 +80,7 @@ async function onUpload(bucket: string, objectKey: string) {
   const bytes = await object.Body?.transformToByteArray();
   const valid = Boolean(bytes)
     && bytes!.byteLength === located.document.byteSize
-    && bytes!.byteLength <= MAX_DOCUMENT_BYTES
+    && bytes!.byteLength <= maxBytesFor(located.document.mediaType)
     && createHash('sha256').update(bytes!).digest('hex') === located.document.checksum
     && ALLOWED_MEDIA_TYPES.includes(located.document.mediaType)
     && matchesFileSignature(bytes!, located.document.mediaType);

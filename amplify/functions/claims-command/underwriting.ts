@@ -97,6 +97,33 @@ export function calculatePremium(assetType: string, answers: Record<string, unkn
   };
 }
 
+export type PayoutStep = { label: string; amount: number; kind: 'start' | 'minus' | 'cap' | 'result'; note: string };
+
+/**
+ * The same arithmetic as calculateRecommendedPayout, laid out step by step so an officer can see
+ * exactly how the figure was reached: lowest evidenced loss, depreciation, policy-limit cap, excess.
+ */
+export function explainPayout(input: { coveredLossValue: number; repairEstimate?: number | null; replacementEstimate?: number | null; policyLimit: number; excess: number; depreciation: number }) {
+  const sources = [
+    { name: 'covered loss', value: input.coveredLossValue }, { name: 'repair estimate', value: input.repairEstimate },
+    { name: 'replacement estimate', value: input.replacementEstimate },
+  ].filter((item): item is { name: string; value: number } => typeof item.value === 'number' && Number.isFinite(item.value) && item.value >= 0);
+  const lowest = sources.reduce((best, item) => (item.value < best.value ? item : best), sources[0]);
+  const depreciationAmount = lowest.value * input.depreciation;
+  const afterDepreciation = lowest.value - depreciationAmount;
+  const capped = afterDepreciation > input.policyLimit;
+  const beforeExcess = Math.min(afterDepreciation, input.policyLimit);
+  const result = Math.max(0, beforeExcess - input.excess);
+  const steps: PayoutStep[] = [
+    { label: 'Evidenced loss', amount: lowest.value, kind: 'start', note: sources.length > 1 ? `The lowest of ${sources.map((item) => item.name).join(', ')} is used (${lowest.name}).` : 'Supported by the evidence reviewed.' },
+    { label: `Depreciation (${Math.round(input.depreciation * 1000) / 10}%)`, amount: -depreciationAmount, kind: 'minus', note: 'Reduces the loss for age and wear.' },
+  ];
+  if (capped) steps.push({ label: 'Policy limit applied', amount: input.policyLimit - afterDepreciation, kind: 'cap', note: `The policy pays at most R${input.policyLimit.toLocaleString('en-ZA')}.` });
+  steps.push({ label: 'Excess', amount: -Math.min(input.excess, beforeExcess), kind: 'minus', note: 'The client pays this first.' });
+  steps.push({ label: 'Recommended payout', amount: result, kind: 'result', note: 'Never below zero and never above the policy limit.' });
+  return { steps, evidencedLoss: lowest.value, afterDepreciation, capped, result };
+}
+
 export function calculateRecommendedPayout(input: { coveredLossValue: number; repairEstimate?: number; replacementEstimate?: number; policyLimit: number; excess: number; depreciation: number }) {
   const candidates = [input.coveredLossValue, input.repairEstimate, input.replacementEstimate].filter((value): value is number => Number.isFinite(value) && value! >= 0);
   const evidencedLoss = Math.min(...candidates);
