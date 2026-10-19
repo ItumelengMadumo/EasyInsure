@@ -2,6 +2,8 @@
 import { PERSONAS } from './mode';
 import { estimatePremium } from './rules';
 
+const price = (assetType: string, value: number) => estimatePremium(assetType, { purchasePrice: value, condition: 'average', assetUse: 'Personal', priorClaims: 0 });
+
 export type Db = Record<string, any[]>;
 export const MODELS = [
   'UserProfile', 'Asset', 'Policy', 'PolicyApplication', 'PremiumAssessment', 'Claim', 'ClaimDocument',
@@ -32,28 +34,29 @@ export function seedDb(): Db {
     searchText: [a.description, a.make, a.model, a.vin, a.serialNumber].filter(Boolean).join(' '),
   });
   const application = (id: string, owner: string, no: string, assetId: string, assetType: string, status: string, value: number, extra: Record<string, any> = {}) => {
-    const est = estimatePremium(assetType, value);
+    const est = price(assetType, value);
     add('PremiumAssessment', { id: `pa-${id}`, applicationId: id, ...est });
     add('PolicyApplication', {
       id, owner, applicationNumber: no, assetId, assetType, schemaVersion: 'demo-1', status, answers: {},
       completedSections: ['ownership', 'identity', 'specifications', 'condition', 'usage', 'security', 'valuation', 'risk'],
-      missingInformation: [], latestAssessmentId: `pa-${id}`, submittedAt: ago(14), lastUpdatedAt: ago(2), ...extra,
+      missingInformation: [], latestAssessmentId: `pa-${id}`, submittedAt: ago(14), lastUpdatedAt: ago(2),
+      ...(['QUOTED', 'ACCEPTED'].includes(status) ? { quotedPremium: est.indicativePremium } : {}), ...extra,
     });
   };
 
-  policy('pol-1', CLIENT, 'POL-100231', 1248, 'Comprehensive motor cover including theft, accident and weather damage.');
-  policy('pol-2', CLIENT, 'POL-100232', 133, 'All-risk portable electronics cover.');
-  policy('pol-3', PIETER, 'POL-100877', 702, 'Comprehensive motor cover.');
+  policy('pol-1', CLIENT, 'POL-100231', price('vehicle', 520000).indicativePremium, 'Comprehensive motor cover including theft, accident and weather damage.');
+  policy('pol-2', CLIENT, 'POL-100232', price('electronics', 42000).indicativePremium, 'All-risk portable electronics cover.');
+  policy('pol-3', PIETER, 'POL-100877', price('vehicle', 215000).indicativePremium, 'Comprehensive motor cover.');
   asset({ id: 'ast-1', owner: CLIENT, assetType: 'vehicle', description: 'Toyota Hilux 2.8 GD-6 double cab', make: 'Toyota', model: 'Hilux', year: 2021, vin: 'AHTFB3CD600123456', registrationNumber: 'CA 482 913', mileageKm: 58000, purchasePrice: 520000, policyId: 'pol-1', status: 'INSURABLE' });
   asset({ id: 'ast-2', owner: CLIENT, assetType: 'electronics', description: 'MacBook Pro 14-inch', make: 'Apple', model: 'MacBook Pro', year: 2023, serialNumber: 'C02XK1ABC7', purchasePrice: 42000, policyId: 'pol-2', status: 'INSURABLE', portable: true });
   asset({ id: 'ast-3', owner: CLIENT, assetType: 'electronics', description: 'Canon EOS R6 camera kit', make: 'Canon', model: 'EOS R6', year: 2024, serialNumber: 'CN4401992', purchasePrice: 38000, status: 'UNDER_REVIEW', registeredAt: ago(9), portable: true });
   asset({ id: 'ast-4', owner: CLIENT, assetType: 'property', description: 'Family home, Waterkloof Pretoria', address: '14 Jacaranda Street, Waterkloof, Pretoria', squareFootage: 240, constructionType: 'Brick', roofType: 'Tile', purchasePrice: 1850000, status: 'UNDER_REVIEW', registeredAt: ago(3) });
   asset({ id: 'ast-5', owner: PIETER, assetType: 'vehicle', description: 'Volkswagen Polo Vivo 1.4', make: 'Volkswagen', model: 'Polo Vivo', year: 2019, vin: 'AAVZZZ6RZKU123789', registrationNumber: 'GP 330 221', mileageKm: 91000, purchasePrice: 215000, policyId: 'pol-3', status: 'INSURABLE' });
-  application('app-1', CLIENT, 'APP-2026-0101', 'ast-1', 'vehicle', 'ACCEPTED', 520000, { quotedPremium: 1248 });
-  application('app-2', CLIENT, 'APP-2026-0102', 'ast-2', 'electronics', 'ACCEPTED', 42000, { quotedPremium: 133 });
-  application('app-3', CLIENT, 'APP-2026-0188', 'ast-3', 'electronics', 'QUOTED', 38000, { quotedPremium: 121, quoteExpiresAt: ago(-14) });
+  application('app-1', CLIENT, 'APP-2026-0101', 'ast-1', 'vehicle', 'ACCEPTED', 520000);
+  application('app-2', CLIENT, 'APP-2026-0102', 'ast-2', 'electronics', 'ACCEPTED', 42000);
+  application('app-3', CLIENT, 'APP-2026-0188', 'ast-3', 'electronics', 'QUOTED', 38000, { quoteExpiresAt: ago(-14) });
   application('app-4', CLIENT, 'APP-2026-0195', 'ast-4', 'property', 'SUBMITTED', 1850000, { submittedAt: ago(3) });
-  application('app-5', PIETER, 'APP-2026-0140', 'ast-5', 'vehicle', 'ACCEPTED', 215000, { quotedPremium: 702 });
+  application('app-5', PIETER, 'APP-2026-0140', 'ast-5', 'vehicle', 'ACCEPTED', 215000);
 
   type Claim = Record<string, any>;
   const claim = (c: Claim) => add('Claim', { tier: 2, riskScore: 24, fraudFlag: false, currentMilestone: c.status, lastActivityAt: ago(1), ...c });

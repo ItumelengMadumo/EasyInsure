@@ -6,8 +6,8 @@ export function PageHeader({ eyebrow, title, description, action }: { eyebrow: s
   return <header className="page-head"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>{action}</header>;
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return <label className="field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>;
+export function Field({ label, hint, className = '', children }: { label: string; hint?: string; className?: string; children: ReactNode }) {
+  return <label className={`field ${className}`.trim()}><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>;
 }
 
 export function Metric({ value, label, detail, tone = '' }: { value: string | number; label: string; detail?: string; tone?: string }) {

@@ -4,7 +4,7 @@ import { getCurrentUser } from 'aws-amplify/auth';
 import { AuthHeader } from './components/AuthHeader';
 import { Workspace } from './components/Workspace';
 import { DemoPicker } from './components/DemoPicker';
-import { exitDemo } from './components/DemoBanner';
+import { exitDemo } from './lib/demo/exit';
 import { isDemo, isDemoEnabled } from './lib/demo/mode';
 import { LandingPage } from './pages/LandingPage';
 

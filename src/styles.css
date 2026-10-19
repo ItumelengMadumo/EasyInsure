@@ -55,3 +55,25 @@ main{min-width:0;padding:0 42px 62px}.topbar{height:70px;display:flex;justify-co
 .demo-banner{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:90;display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 24px);padding:9px 14px;border-radius:14px;background:var(--navy);color:#fff;box-shadow:0 12px 34px #0005;font-size:12px}.demo-banner label{display:flex;align-items:center;gap:8px;color:#b8c8cf}.demo-banner select{border:1px solid #ffffff33;background:#0d3045;color:#fff;border-radius:8px;padding:6px 8px}.demo-banner button{border:1px solid #ffffff33;background:transparent;color:#fff;border-radius:8px;padding:6px 10px;font-weight:700}.demo-banner .demo-exit{background:var(--lime);border-color:var(--lime);color:var(--navy)}.demo-badge{background:var(--lime);color:var(--navy);border-radius:6px;padding:3px 7px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;font-size:10px}
 .demo-picker{background:#fff;border-radius:18px;max-width:860px;width:calc(100vw - 32px);max-height:calc(100vh - 40px);overflow:auto;padding:28px;box-shadow:0 30px 80px #0006}.demo-picker header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.demo-picker h2{margin:6px 0;font:800 26px Manrope;color:var(--navy)}.demo-picker header p{color:var(--muted);margin:0;max-width:520px}.demo-roles{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:22px}.demo-roles button{text-align:left;border:1px solid var(--line);background:#f7faf8;border-radius:12px;padding:16px;color:var(--ink)}.demo-roles button:hover{border-color:var(--teal);background:#eef8f5}.demo-roles strong,.demo-roles small{display:block}.demo-roles small{color:var(--teal);font-weight:700;margin-top:2px}.demo-roles p{margin:8px 0 0;font-size:12px;line-height:1.5;color:#60737c}
 .landing-demo{border:1px solid var(--teal);background:#e8f4ef;color:#08766d;border-radius:8px;padding:13px 16px;font-weight:800}
+
+/* Descriptive forms: labelled controls inside compact layouts */
+.field small{font-size:11px;line-height:1.4;color:#6d808b}
+.info-request-form,.case-composer,.team-assignment-form{align-items:end}
+.info-request-form .field{flex:1}
+.case-composer .field,.team-assignment-form .field{min-width:0}
+.case-composer .field.wide{grid-column:1/-1}
+.case-composer .field textarea{min-height:76px}
+.call-log-form .field{gap:4px}
+.call-log-form .field.wide{grid-column:1/-1}
+.call-log-form .field>span,.filter-grid .field>span{font-size:10px}
+.filter-grid{align-items:end}
+.filter-grid .field input,.filter-grid .field select{padding:8px}
+.application-actions form{align-items:end}
+.public-estimator form label small{display:block;font-weight:400;color:#6d808b;margin:2px 0 4px;font-size:11px}
+.case-composer{grid-template-columns:200px 1fr auto}
+.case-composer .field.wide+button{grid-column:1/-1;justify-self:end}
+@media(max-width:780px){.case-composer{grid-template-columns:1fr}}
+.demo-banner~main{padding-bottom:110px}
+.team-assignment-form{grid-template-columns:1fr 1.3fr auto}
+@media(max-width:780px){.team-assignment-form{grid-template-columns:1fr}}
+.policy-top .status{align-self:flex-start;height:fit-content}

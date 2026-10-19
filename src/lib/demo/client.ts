@@ -4,7 +4,7 @@
 import { demoPersona, PERSONAS, type Persona } from './mode';
 import { MODELS, seedDb, type Db } from './seed';
 import {
-  assetCategoryDefinitions, canOperateRole, estimatePremium, isDeveloperRole, isSeniorRole, isStaffRole, recommendPayout,
+  assetCategoryDefinitions, canOperateRole, estimatePremium, isDeveloperRole, isSeniorRole, isStaffRole, recommendPayout, validateApplication,
 } from './rules';
 
 const DB_KEY = 'ei-demo-db-v1';
@@ -120,6 +120,8 @@ const mutations: Record<string, (me: Persona, a: Args) => any> = {
   submitAssetApplication: (me, a) => {
     const app = ownedApplication(me, a.applicationId); if (app.status !== 'DRAFT') deny('This application was already submitted.');
     const x = app.answers; const price = Number(x.purchasePrice);
+    const missing = validateApplication(app.assetType, x);
+    if (missing.length) deny(`Complete the required answers first: ${missing.slice(0, 4).join(', ')}${missing.length > 4 ? '…' : ''}.`);
     if (!Number.isFinite(price) || price <= 0) deny('Enter the replacement value before submitting.');
     const assetId = `ast-${uid()}`;
     db().Asset.push({
@@ -127,12 +129,12 @@ const mutations: Record<string, (me: Persona, a: Args) => any> = {
       purchaseDate: x.purchaseDate || now().slice(0, 10), condition: x.condition || 'average', make: x.make, model: x.model,
       year: x.year ? Number(x.year) : null, serialNumber: x.serialNumber, vin: x.vin, registrationNumber: x.registrationNumber,
       address: x.address, squareFootage: x.squareFootage ? Number(x.squareFootage) : null, constructionType: x.constructionType,
-      roofType: x.roofType, securityFeatures: x.securityFeatures, assetUse: x.assetUse, portable: x.portable ?? false,
+      roofType: x.roofType, occupancyType: x.occupancyType, purchaseSource: x.purchaseSource, securityFeatures: x.securityFeatures, assetUse: x.assetUse, portable: x.portable ?? false,
       status: 'UNDER_REVIEW', registeredAt: now(), lastUpdatedAt: now(),
       searchText: [x.description, x.make, x.model, x.vin, x.serialNumber].filter(Boolean).join(' '),
     });
     const assessmentId = `pa-${uid()}`;
-    db().PremiumAssessment.push({ id: assessmentId, applicationId: app.id, ...estimatePremium(app.assetType, price, x.condition, Number(x.priorClaims) || 0) });
+    db().PremiumAssessment.push({ id: assessmentId, applicationId: app.id, ...estimatePremium(app.assetType, x) });
     Object.assign(app, { status: 'SUBMITTED', assetId, latestAssessmentId: assessmentId, submittedAt: now(), lastUpdatedAt: now(), applicationNumber: `APP-2026-${String(200 + db().PolicyApplication.length).padStart(4, '0')}` });
     return app;
   },
@@ -232,7 +234,7 @@ const mutations: Record<string, (me: Persona, a: Args) => any> = {
     const input = { coveredLossValue: Number(a.coveredLossValue), policyLimit: Number(a.policyLimit), excess: Number(a.excess), depreciation: Number(a.depreciation) };
     if (Object.values(input).some((value) => !Number.isFinite(value) || value < 0)) deny('Enter valid, non-negative assessment figures.');
     const version = db().ClaimAssessment.filter((row) => row.claimId === claim.id).length + 1;
-    const row = { id: `as-${uid()}`, claimId: claim.id, version, evidenceReviewed: a.evidenceReviewed ?? [], ...input, repairEstimate: a.repairEstimate ?? null, replacementEstimate: a.replacementEstimate ?? null, exclusions: a.exclusions ?? [], recommendedPayout: recommendPayout(input), status: 'DRAFT' };
+    const row = { id: `as-${uid()}`, claimId: claim.id, version, evidenceReviewed: a.evidenceReviewed ?? [], ...input, repairEstimate: a.repairEstimate ?? null, replacementEstimate: a.replacementEstimate ?? null, exclusions: a.exclusions ?? [], recommendedPayout: recommendPayout({ ...input, repairEstimate: Number.isFinite(Number(a.repairEstimate)) && a.repairEstimate != null ? Number(a.repairEstimate) : undefined, replacementEstimate: a.replacementEstimate != null && Number.isFinite(Number(a.replacementEstimate)) ? Number(a.replacementEstimate) : undefined }), status: 'DRAFT' };
     db().ClaimAssessment.push(row); return row;
   },
   finalizeClaimPayoutAssessment: (me, a) => {

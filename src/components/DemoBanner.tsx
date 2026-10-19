@@ -1,11 +1,7 @@
 import { resetDemoData } from '../lib/demo/client';
-import { DEMO_ROLES, getDemoRole, PERSONAS, setDemoRole, switchDemoRole, type DemoRole } from '../lib/demo/mode';
+import { exitDemo } from '../lib/demo/exit';
+import { DEMO_ROLES, getDemoRole, PERSONAS, switchDemoRole, type DemoRole } from '../lib/demo/mode';
 import { titleCase } from '../lib/format';
-
-export function exitDemo() {
-  setDemoRole(null); resetDemoData();
-  window.location.assign(window.location.pathname);
-}
 
 export function DemoBanner() {
   const role = getDemoRole() ?? 'client';
