@@ -55,10 +55,20 @@ describe('Bedrock minimization', () => {
     const payload = buildInferencePayload({
       owner: 'cognito-sub', policyId: 'private-policy', claimType: 'vehicle',
       description: 'Collision',
-    }, { risk: 'low' }, 'evidence');
+    }, { risk: 'low' }, [{ documentId: 'doc-1', fileName: 'quote.pdf', text: 'evidence' }]);
     expect(payload.claim).not.toHaveProperty('owner');
     expect(payload.claim).not.toHaveProperty('policyId');
     expect(payload.claim.claimType).toBe('vehicle');
+  });
+
+  it('keeps evidence attributed to its own document instead of one flattened blob', () => {
+    const payload = buildInferencePayload({ claimType: 'vehicle', description: 'Collision' }, { risk: 'low' }, [
+      { documentId: 'doc-1', fileName: 'quote.pdf', text: 'Panel beater quote for R12 000' },
+      { documentId: 'doc-2', fileName: 'affidavit.pdf', text: 'ID 9001015009087 witnessed the collision' },
+    ]);
+    expect(payload.evidenceDocuments).toHaveLength(2);
+    expect(payload.evidenceDocuments[0]).toMatchObject({ documentId: 'doc-1', fileName: 'quote.pdf' });
+    expect(payload.evidenceDocuments[1].text).not.toContain('9001015009087');
   });
 });
 

@@ -25,6 +25,7 @@ import { scanEvidence } from './functions/scan-evidence/resource';
 import { communicationWorker } from './functions/communication-worker/resource';
 import { communicationWebhook } from './functions/communication-webhook/resource';
 import { assignmentWorker } from './functions/assignment-worker/resource';
+import { demoLeadCapture } from './functions/demo-lead-capture/resource';
 import { storage } from './storage/resource';
 import {
   BEDROCK_FOUNDATION_MODEL_ID,
@@ -37,6 +38,7 @@ import {
 const backend = defineBackend({
   auth, data, storage, insuranceEngine, claimsCommand, postConfirmation, claimsCopilot,
   processClaim, scanEvidence, communicationWorker, communicationWebhook, assignmentWorker,
+  demoLeadCapture,
 });
 const stack = Stack.of(backend.insuranceEngine.resources.lambda);
 
@@ -157,6 +159,11 @@ backend.claimsCopilot.resources.lambda.addToRolePolicy(new PolicyStatement({
   conditions: { StringEquals: { 'bedrock:InferenceProfileArn': inferenceProfileArn } },
 }));
 
+backend.demoLeadCapture.resources.lambda.addToRolePolicy(new PolicyStatement({
+  actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+  resources: ['*'],
+}));
+
 new Alarm(stack, 'InsuranceEngineErrors', {
   metric: backend.insuranceEngine.resources.lambda.metricErrors({ period: Duration.minutes(5) }),
   threshold: 1,
@@ -218,6 +225,19 @@ cfnBucket.lifecycleConfiguration = {
 bucket.grantRead(backend.scanEvidence.resources.lambda, 'quarantine/*');
 bucket.grantDelete(backend.scanEvidence.resources.lambda, 'quarantine/*');
 bucket.grantWrite(backend.scanEvidence.resources.lambda, 'evidence/*');
+bucket.grantRead(backend.scanEvidence.resources.lambda, 'evidence/*');
+bucket.grantWrite(backend.scanEvidence.resources.lambda, 'extracted/*');
+// Textract's synchronous DetectDocumentText API has no resource-level permissions.
+backend.scanEvidence.resources.lambda.addToRolePolicy(new PolicyStatement({
+  actions: ['textract:DetectDocumentText'],
+  resources: ['*'],
+}));
+
+// process-claim reads extracted text to build the copilot's evidence payload. This is a
+// one-directional grant (no trigger wiring back into storage), so it does not reproduce
+// the circular-dependency issue noted above for scanEvidence's onUpload trigger.
+bucket.grantRead(backend.processClaim.resources.lambda, 'extracted/*');
+(backend.processClaim.resources.lambda as LambdaFunction).addEnvironment('EVIDENCE_BUCKET_NAME', bucket.bucketName);
 
 // GuardDuty Malware Protection for S3 scans every quarantine upload. scan-evidence only
 // promotes a file to evidence/ after the NO_THREATS_FOUND verdict arrives via EventBridge.

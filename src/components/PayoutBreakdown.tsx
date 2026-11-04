@@ -8,11 +8,19 @@ const signed = (amount: number) => `${amount < 0 ? '−' : amount > 0 ? '+' : ''
 /** Shows how a payout figure was reached, step by step, using the same arithmetic the backend runs. */
 export function PayoutBreakdown({ input, title = 'How this was calculated' }: { input: Input; title?: string }) {
   const { steps } = explainPayout(input);
+  const rows = steps.reduce<Array<typeof steps[number] & { running: number }>>((acc, step) => {
+    const previous = acc.length ? acc[acc.length - 1].running : 0;
+    const running = step.kind === 'start' || step.kind === 'result' ? step.amount : previous + step.amount;
+    return [...acc, { ...step, running }];
+  }, []);
   return <section className="payout-breakdown" aria-label={title}>
     <h4>{title}</h4>
-    <ol>{steps.map((step) => <li className={step.kind} key={step.label}>
+    <ol>{rows.map((step) => <li className={step.kind} key={step.label}>
       <span><strong>{step.label}</strong><small>{step.note}</small></span>
-      <b>{step.kind === 'start' || step.kind === 'result' ? money.format(step.amount) : signed(step.amount)}</b>
+      <span className="payout-breakdown-amounts">
+        <b>{step.kind === 'start' || step.kind === 'result' ? money.format(step.amount) : signed(step.amount)}</b>
+        {step.kind !== 'start' && step.kind !== 'result' && <small className="running">→ {money.format(step.running)}</small>}
+      </span>
     </li>)}</ol>
   </section>;
 }

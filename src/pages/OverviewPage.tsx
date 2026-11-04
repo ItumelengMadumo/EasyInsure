@@ -17,6 +17,8 @@ export function OverviewPage(props: Props) {
 function ClientOverview({ portfolio, go, displayName, access }: Props) {
   const firstName = displayName.split(/[\s@]/)[0];
   const covered = portfolio.assets.filter((asset) => asset.policyId);
+  const uninsured = portfolio.assets.filter((asset) => !asset.policyId);
+  const uninsuredValue = uninsured.reduce((sum, asset) => sum + asset.purchasePrice, 0);
   const activePolicies = portfolio.policies.filter((policy) => policy.status.toLowerCase() === 'active').length;
   const inProgress = portfolio.claims.filter((claim) => !['CLOSED', 'PAID', 'REJECTED', 'DRAFT', 'INFO_NEEDED'].includes(claim.status)).length;
   const replies = portfolio.claims.filter((claim) => claim.status === 'INFO_NEEDED');
@@ -25,7 +27,7 @@ function ClientOverview({ portfolio, go, displayName, access }: Props) {
   return <>
     <PageHeader eyebrow="Your cover at a glance" title={`Good day, ${firstName}.`} description="Your cover, claims and any decisions that need you, in one explainable place." action={<button className="primary" onClick={() => go('claims')}>＋ Start a claim</button>} />
     <section className="metrics">
-      <Metric value={money.format(covered.reduce((sum, asset) => sum + asset.purchasePrice, 0))} label="Protected value" detail={`${covered.length} of ${portfolio.assets.length} registered assets covered`} />
+      <Metric value={money.format(covered.reduce((sum, asset) => sum + asset.purchasePrice, 0))} label="Protected value" detail={uninsured.length ? `${money.format(uninsuredValue)} across ${uninsured.length} uninsured asset${uninsured.length === 1 ? '' : 's'}` : 'All registered assets covered'} />
       <Metric value={activePolicies} label="Active policies" detail={`${portfolio.policies.length} total policies`} />
       <Metric value={inProgress} label="Claims in progress" detail="Being checked or assessed" tone="amber" />
       <Metric value={waiting} label="Waiting on you" detail={waiting ? 'Open the items below' : 'Nothing needs your attention'} tone={waiting ? 'red' : 'green'} />
@@ -43,7 +45,7 @@ function ClientOverview({ portfolio, go, displayName, access }: Props) {
       <article className="panel">
         <span className="eyebrow">Protection health</span><h2>Portfolio snapshot</h2>
         <div className="donut"><div><strong>{portfolio.assets.length ? Math.round((covered.length / portfolio.assets.length) * 100) : 0}%</strong><span>covered</span></div></div>
-        <div className="legend"><span><i className="green-dot" />Linked to policy <strong>{covered.length}</strong></span><span><i className="grey-dot" />Needs cover <strong>{portfolio.assets.length - covered.length}</strong></span></div>
+        <div className="legend"><span><i className="green-dot" />Linked to policy <strong>{covered.length}</strong></span><span><i className="grey-dot" />Needs cover <strong>{uninsured.length}</strong>{uninsured.length ? <small>{money.format(uninsuredValue)} uninsured</small> : null}</span></div>
         <button className="secondary full" onClick={() => go('assets')}>Review assets</button>
       </article>
     </section>

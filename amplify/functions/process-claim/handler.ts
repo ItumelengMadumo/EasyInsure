@@ -2,11 +2,18 @@ import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/data';
 import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(process.env as never);
 Amplify.configure(resourceConfig, libraryOptions);
 const data: any = generateClient();
 const lambda = new LambdaClient({});
+const s3 = new S3Client({});
+
+async function readExtractedText(bucket: string, key: string): Promise<string> {
+  const object = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  return (await object.Body?.transformToString()) ?? '';
+}
 
 type State = { claimId: string; jobId: string; correlationId: string; context?: Record<string, unknown>; calculations?: Record<string, unknown>; copilot?: Record<string, unknown> };
 
@@ -42,7 +49,9 @@ export const handler = async (event: { stage: string; state: State }): Promise<S
     return { ...state, context: {
       claim, asset, policy,
       previousClaimDates: previous.data.filter((item: { id: string }) => item.id !== claim.id).map((item: { createdAt: string }) => item.createdAt),
-      documentKeys: documents.data.map((item: { extractedTextKey?: string }) => item.extractedTextKey).filter(Boolean),
+      evidenceDocuments: usable
+        .filter((item: { extractedTextKey?: string }) => item.extractedTextKey)
+        .map((item: { id: string; fileName: string; extractedTextKey: string }) => ({ documentId: item.id, fileName: item.fileName, extractedTextKey: item.extractedTextKey })),
     } };
   }
 
@@ -63,19 +72,31 @@ export const handler = async (event: { stage: string; state: State }): Promise<S
   if (event.stage === 'copilot') {
     const functionName = process.env.CLAIMS_COPILOT_FUNCTION_NAME;
     if (!functionName) throw new Error('Claims copilot function is not configured');
-    const claim = (state.context as { claim: unknown }).claim;
-    const copilot = await invoke(functionName, { arguments: { claim, deterministicOutputs: state.calculations, evidenceText: '' } });
+    const bucketName = process.env.EVIDENCE_BUCKET_NAME;
+    if (!bucketName) throw new Error('Evidence bucket is not configured');
+    const context = state.context as { claim: unknown; evidenceDocuments: { documentId: string; fileName: string; extractedTextKey: string }[] };
+    const documents = await Promise.all(context.evidenceDocuments.map(async (document) => ({
+      documentId: document.documentId,
+      fileName: document.fileName,
+      text: await readExtractedText(bucketName, document.extractedTextKey),
+    })));
+    const copilot = await invoke(functionName, { arguments: { claim: context.claim, deterministicOutputs: state.calculations, evidenceDocuments: documents } });
     return { ...state, copilot };
   }
 
   if (event.stage === 'persist') {
     const context = state.context as { claim: { status: string } };
     const calculations = state.calculations as { tier: { tier: number }; risk: { totalRiskScore: number }; fraud: { isFlagged: boolean; recommendation: string } };
-    const copilot = state.copilot as { summary: string; recommendation: string; inconsistencies: string[]; missingInformation: string[]; modelId: string; promptVersion: string; confidence: number; warnings: string[]; latencyMs: number };
+    const copilot = state.copilot as {
+      summary: string; recommendation: string; inconsistencies: string[]; missingInformation: string[];
+      citations: { text: string; documentId: string; fileName: string }[];
+      modelId: string; promptVersion: string; confidence: number; warnings: string[]; latencyMs: number;
+    };
     const analysis = await data.models.ClaimAnalysis.create({
       claimId: state.claimId, version: 1, calculationInputs: state.context as never,
       deterministicOutputs: calculations as never, aiSummary: copilot.summary, recommendation: copilot.recommendation,
       inconsistencies: copilot.inconsistencies, missingInformation: copilot.missingInformation,
+      citations: copilot.citations as never,
       modelId: copilot.modelId, promptVersion: copilot.promptVersion, confidence: copilot.confidence,
       warnings: copilot.warnings, latencyMs: copilot.latencyMs, inferenceStatus: 'SUCCEEDED',
     });

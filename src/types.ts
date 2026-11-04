@@ -130,9 +130,12 @@ export type ClaimAssessment = {
 export type RiskFactor = { name: string; applied: boolean; weight: number; reason: string };
 export type FraudSignal = { signalName: string; triggered: boolean; severity: string; details: string };
 /** Deterministic checks plus the advisory AI summary stored for a claim (senior-readable). */
+export type ClaimCitation = { text: string; documentId: string; fileName: string };
+
 export type ClaimAnalysis = {
   id: string; claimId: string; version: number; aiSummary?: string | null; recommendation?: string | null;
   inconsistencies?: string[] | null; missingInformation?: string[] | null; warnings?: string[] | null;
+  citations?: ClaimCitation[] | null;
   confidence?: number | null; modelId?: string | null; inferenceStatus: string;
   deterministicOutputs?: { tier?: { tier: number }; risk?: { totalRiskScore: number; riskLevel: string; factors: RiskFactor[] }; fraud?: { isFlagged: boolean; overallRisk: string; recommendation: string; signals: FraudSignal[] } } | null;
 };

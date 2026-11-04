@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { SENIOR_APPROVAL_LIMIT, assertDecisionAuthority } from '../../amplify/functions/claims-command/domain';
 import { CaseDrawer, CaseFile } from '../components/CaseFile';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { DocumentPreview } from '../components/DocumentPreview';
 import { PayoutBreakdown } from '../components/PayoutBreakdown';
 import { ClaimTable, EmptyState, Field, PageHeader, Status } from '../components/ui';
 import { client } from '../lib/data';
@@ -50,10 +51,14 @@ function SeniorReview({ portfolio, groups, owner, refresh, notify }: Props) {
   </>;
 }
 
-function RiskAndAi({ analysis, claim }: { analysis?: ClaimAnalysis; claim: Claim }) {
+function RiskAndAi({ analysis, claim, portfolio }: { analysis?: ClaimAnalysis; claim: Claim; portfolio: Portfolio }) {
   const out = analysis?.deterministicOutputs;
+  const [previewId, setPreviewId] = useState<string | null>(null);
   if (!analysis) return <section className="review-block"><h3>Risk signals and AI summary</h3><p className="empty">No analysis has been recorded for {claim.claimNumber}. Decide from the evidence and the calculation above.</p></section>;
   const signals = out?.fraud?.signals ?? [];
+  const citations = analysis.citations ?? [];
+  const previewDocument = previewId ? portfolio.documents.find((item) => item.id === previewId) ?? null : null;
+  const hasEvidence = Boolean(citations.length);
   return <>
     <section className="review-block"><h3>Rule-based checks</h3>
       <p className="muted">Fixed rules, not AI. {out?.fraud ? `Overall: ${titleCase(out.fraud.overallRisk)}. ${out.fraud.recommendation}.` : ''}</p>
@@ -61,13 +66,17 @@ function RiskAndAi({ analysis, claim }: { analysis?: ClaimAnalysis; claim: Claim
       {out?.risk && <><h4>Risk factors · {titleCase(riskLevel(out.risk.totalRiskScore))} ({out.risk.totalRiskScore.toFixed(2)})</h4><ul className="signal-list">{out.risk.factors.filter((item) => item.applied).map((item) => <li key={item.name}><b>{item.weight > 0 ? '+' : '−'}</b><span><strong>{item.name} ({item.weight > 0 ? '+' : ''}{item.weight})</strong><small>{item.reason}</small></span></li>)}</ul></>}
     </section>
     <section className="review-block ai"><h3><span className="ai-tag">AI</span> Advisory summary</h3>
-      <p className="muted">Advisory only. It is written from the claim record and has not read the uploaded evidence files, so check the documents yourself.</p>
+      <p className="muted">{hasEvidence ? 'Advisory only. Statements below are grounded in the uploaded evidence; open a citation to check the source document yourself.' : 'Advisory only. It is written from the claim record and has not read the uploaded evidence files, so check the documents yourself.'}</p>
       {analysis.aiSummary && <p>{analysis.aiSummary}</p>}
       {analysis.recommendation && <p><strong>Suggested approach:</strong> {analysis.recommendation}</p>}
       {!!analysis.inconsistencies?.length && <><h4>Possible inconsistencies</h4><ul>{analysis.inconsistencies.map((item) => <li key={item}>{item}</li>)}</ul></>}
       {!!analysis.missingInformation?.length && <><h4>Information that is missing</h4><ul>{analysis.missingInformation.map((item) => <li key={item}>{item}</li>)}</ul></>}
+      {hasEvidence && <><h4>Evidence cited</h4><ul className="citation-list">{citations.map((citation, index) => <li key={`${citation.documentId}-${index}`}>
+        <button type="button" className="citation-chip" onClick={() => setPreviewId(citation.documentId)}>“{citation.text}” — {citation.fileName}</button>
+      </li>)}</ul></>}
       {analysis.confidence != null && <small>Model confidence {Math.round(analysis.confidence * 100)}%</small>}
     </section>
+    {previewDocument && <DocumentPreview key={previewDocument.id} document={previewDocument} claimNumber={claim.claimNumber} onClose={() => setPreviewId(null)} />}
   </>;
 }
 
@@ -128,7 +137,7 @@ function DecisionPanel({ claim, portfolio, groups, owner, refresh, notify }: { c
       {needsSuperuser && !check?.includes('finalized') && <div className="escalate"><p>This payout is above {money.format(SENIOR_APPROVAL_LIMIT)}. Only a superuser can approve it.</p><button className="secondary" onClick={escalate} disabled={!superusers.length}>Escalate to a superuser</button></div>}
       <div className="decision-actions"><button className="reject-button" disabled={Boolean(authorityProblem(claim, 0, assessment, owner, groups))} onClick={() => setDialog('reject')}>Reject with reason</button><button className="primary" disabled={!canApprove} onClick={() => setDialog('approve')}>Review and approve</button></div>
     </section>
-    <RiskAndAi analysis={analysisFor(portfolio, claim.id)} claim={claim} />
+    <RiskAndAi analysis={analysisFor(portfolio, claim.id)} claim={claim} portfolio={portfolio} />
     {dialog === 'approve' && entered !== null && <ConfirmModal title={`Approve ${money.format(entered)}?`} description="This approves the payout and tells the client. It cannot be undone." confirmLabel="Approve payout" onCancel={() => setDialog(null)} onConfirm={(values) => decide('approve', values)}
       summary={<dl className="confirm-facts"><div><dt>Claim</dt><dd>{claim.claimNumber} · {clientName(portfolio, claim.owner)}</dd></div><div><dt>Assessed</dt><dd>{money.format(suggested)}</dd></div><div><dt>Approving</dt><dd><strong>{money.format(entered)}</strong></dd></div>{different && <div><dt>Reason for the difference</dt><dd>{reason}</dd></div>}</dl>} />}
     {dialog === 'reject' && <ConfirmModal title={`Reject ${claim.claimNumber}?`} description="The client will see your reason on their case timeline." tone="danger" confirmLabel="Reject claim" fields={[{ name: 'reason', label: 'Reason shown to the client', hint: 'Be clear and specific (at least 5 characters).', type: 'textarea', required: true, minLength: 5, placeholder: 'e.g. The damage occurred before the policy start date.' }]} onCancel={() => setDialog(null)} onConfirm={(values) => decide('reject', values)} />}
@@ -154,7 +163,7 @@ function FinalisePanel({ claim, portfolio, refresh, notify }: { claim: Claim; po
       <p className="muted">Finalising moves the claim to a decision. You will not be able to decide a claim you have finalised, so another senior officer takes it from here.</p>
       <div className="decision-actions"><button className="primary" onClick={() => setOpen(true)}>Finalise assessment</button></div>
     </section>
-    <RiskAndAi analysis={analysisFor(portfolio, claim.id)} claim={claim} />
+    <RiskAndAi analysis={analysisFor(portfolio, claim.id)} claim={claim} portfolio={portfolio} />
     {open && <ConfirmModal title="Finalise this assessment?" description="The claim goes to a decision. You cannot also decide it." confirmLabel="Finalise" summary={<PayoutBreakdown input={assessment} />} onCancel={() => setOpen(false)} onConfirm={finalise} />}
   </>;
 }

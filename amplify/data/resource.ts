@@ -7,6 +7,7 @@ import { scanEvidence } from '../functions/scan-evidence/resource';
 import { communicationWorker } from '../functions/communication-worker/resource';
 import { communicationWebhook } from '../functions/communication-webhook/resource';
 import { assignmentWorker } from '../functions/assignment-worker/resource';
+import { demoLeadCapture } from '../functions/demo-lead-capture/resource';
 
 const staff = ['junior_officer', 'intermediate_officer', 'senior_officer', 'developer', 'superuser'];
 const senior = ['senior_officer', 'superuser'];
@@ -101,7 +102,7 @@ const schema = a.schema({
   PremiumAssessment: a.model({
     owner: a.string().required(), applicationId: a.id().required(), version: a.integer().required(),
     formulaVersion: a.string().required(), inputSnapshot: a.json().required(), factors: a.json().required(),
-    riskScore: a.float().required(), indicativePremium: a.float().required(), rangeLow: a.float().required(),
+    riskScore: a.float().required().authorization((allow) => [allow.groups(senior).to(['read'])]), indicativePremium: a.float().required(), rangeLow: a.float().required(),
     rangeHigh: a.float().required(), assumptions: a.string().array().required(),
     actorSubject: a.string().required(), actorDisplayNameSnapshot: a.string().required(), overrideReason: a.string(),
     createdAtSnapshot: a.datetime().required(), idempotencyKey: a.string().required(),
@@ -169,10 +170,10 @@ const schema = a.schema({
     legacyRequestedAmount: a.float(),
     tier: a.integer(),
     status: a.ref('ClaimStatus').required(),
-    riskScore: a.float(),
-    fraudFlag: a.boolean(),
-    fraudReason: a.string(),
-    suggestedPayout: a.float(),
+    riskScore: a.float().authorization((allow) => [allow.groups(senior).to(['read'])]),
+    fraudFlag: a.boolean().authorization((allow) => [allow.groups(senior).to(['read'])]),
+    fraudReason: a.string().authorization((allow) => [allow.groups(senior).to(['read'])]),
+    suggestedPayout: a.float().authorization((allow) => [allow.groups(senior).to(['read'])]),
     approvedPayout: a.float(),
     approvedBy: a.string(),
     approvalTimestamp: a.datetime(),
@@ -203,7 +204,7 @@ const schema = a.schema({
     checksum: a.string().required(),
     status: a.ref('DocumentStatus').required(),
     uploadedBy: a.string().required(),
-    extractedTextKey: a.string(),
+    extractedTextKey: a.string().authorization((allow) => [allow.groups(senior).to(['read'])]),
     category: a.ref('DocumentCategory'),
     visibility: a.ref('CaseVisibility'),
   }).secondaryIndexes((index) => [index('claimId'), index('checksum')]).authorization((allow) => [
@@ -372,6 +373,7 @@ const schema = a.schema({
     recommendation: a.string(),
     inconsistencies: a.string().array(),
     missingInformation: a.string().array(),
+    citations: a.json(),
     modelId: a.string(),
     promptVersion: a.string().required(),
     confidence: a.float(),
@@ -407,6 +409,17 @@ const schema = a.schema({
     correlationId: a.string().required(),
     occurredAt: a.datetime().required(),
   }).secondaryIndexes((index) => [index('entityId'), index('correlationId')]).authorization((allow) => [
+    allow.groups(senior).to(['read']),
+  ]),
+
+  DemoLead: a.model({
+    name: a.string().required(),
+    email: a.string().required(),
+    company: a.string(),
+    role: a.ref('BusinessRole'),
+    source: a.string().required(),
+    capturedAt: a.datetime().required(),
+  }).secondaryIndexes((index) => [index('capturedAt')]).authorization((allow) => [
     allow.groups(senior).to(['read']),
   ]),
 
@@ -574,15 +587,23 @@ const schema = a.schema({
   CopilotResult: a.customType({
     summary: a.string().required(), inconsistencies: a.string().array().required(), missingInformation: a.string().array().required(),
     recommendation: a.string().required(), confidence: a.float().required(), warnings: a.string().array().required(),
+    citations: a.json().required(),
     modelId: a.string().required(), promptVersion: a.string().required(), latencyMs: a.integer().required(),
   }),
   generateClaimCopilot: a.query().arguments({
-    claim: a.json().required(), deterministicOutputs: a.json().required(), evidenceText: a.string(),
+    claim: a.json().required(), deterministicOutputs: a.json().required(), evidenceDocuments: a.json(),
   }).returns(a.ref('CopilotResult')).authorization((allow) => [allow.groups(senior)]).handler(a.handler.function(claimsCopilot)),
+
+  // Demo visitors are never authenticated, so this is the one write in the schema that
+  // accepts the public API key. The handler validates and rate-limits before writing.
+  captureDemoLead: a.mutation().arguments({
+    name: a.string().required(), email: a.string().required(), company: a.string(),
+    role: a.string().required(), source: a.string().required(),
+  }).returns(a.ref('DemoLead')).authorization((allow) => [allow.publicApiKey()]).handler(a.handler.function(demoLeadCapture)),
 }).authorization((allow) => [
   allow.resource(claimsCommand), allow.resource(processClaim), allow.resource(scanEvidence),
   allow.resource(communicationWorker), allow.resource(communicationWebhook),
-  allow.resource(assignmentWorker),
+  allow.resource(assignmentWorker), allow.resource(demoLeadCapture),
 ]);
 
 // The runtime schema remains the source of truth. The current TypeScript compiler
@@ -592,5 +613,9 @@ export type Schema = any;
 
 export const data = defineData({
   schema,
-  authorizationModes: { defaultAuthorizationMode: 'userPool' },
+  authorizationModes: {
+    defaultAuthorizationMode: 'userPool',
+    // Only captureDemoLead opts into this; every other operation keeps requiring userPool auth.
+    apiKeyAuthorizationMode: { expiresInDays: 365 },
+  },
 });

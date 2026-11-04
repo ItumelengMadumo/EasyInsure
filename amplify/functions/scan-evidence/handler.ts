@@ -1,7 +1,8 @@
 import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/data';
 import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
-import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DetectDocumentTextCommand, TextractClient } from '@aws-sdk/client-textract';
 import { createHash } from 'node:crypto';
 import type { S3Event } from 'aws-lambda';
 import { ALLOWED_MEDIA_TYPES, matchesFileSignature, maxBytesFor, parseQuarantineKey } from '../claims-command/domain';
@@ -10,6 +11,11 @@ const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(proc
 Amplify.configure(resourceConfig, libraryOptions);
 const data: any = generateClient();
 const s3 = new S3Client({});
+const textract = new TextractClient({});
+
+// Textract's synchronous API reads images and single-page PDFs directly from S3. Anything
+// else (multi-page PDFs, video) is left without extracted text rather than failing the scan.
+const TEXTRACTABLE_TYPES = ['image/jpeg', 'image/png', 'application/pdf'];
 
 // 'guardduty' (default): structural checks on upload, promotion only after GuardDuty
 // Malware Protection reports NO_THREATS_FOUND. 'none' is for disposable sandboxes only.
@@ -54,6 +60,31 @@ async function discard(bucket: string, key: string) {
   await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 }
 
+async function extractText(bucket: string, located: Located) {
+  // Only claim evidence is read by the copilot; application documents have no extractedTextKey field.
+  if (located.model !== 'ClaimDocument') return;
+  if (!TEXTRACTABLE_TYPES.includes(located.document.mediaType)) return;
+  let text: string;
+  try {
+    const result = await textract.send(new DetectDocumentTextCommand({
+      Document: { S3Object: { Bucket: bucket, Name: located.evidenceKey } },
+    }));
+    text = (result.Blocks ?? [])
+      .filter((block) => block.BlockType === 'LINE' && block.Text)
+      .map((block) => block.Text)
+      .join('\n');
+  } catch {
+    // Multi-page PDFs and unreadable scans fall back to no extracted text rather than
+    // failing the whole evidence intake; a human reviewer still has the original file.
+    return;
+  }
+  if (!text.trim()) return;
+  const extractedKey = `extracted/${located.evidenceKey.slice('evidence/'.length)}.txt`;
+  await s3.send(new PutObjectCommand({ Bucket: bucket, Key: extractedKey, Body: text, ContentType: 'text/plain' }));
+  const { errors } = await data.models[located.model].update({ id: located.document.id, status: 'EXTRACTED', extractedTextKey: extractedKey });
+  if (errors?.length) throw new Error(errors[0].message);
+}
+
 async function promote(bucket: string, quarantineKey: string, located: Located) {
   await s3.send(new CopyObjectCommand({
     Bucket: bucket, Key: located.evidenceKey,
@@ -64,6 +95,7 @@ async function promote(bucket: string, quarantineKey: string, located: Located) 
   }));
   await setStatus(located, 'CLEAN', located.evidenceKey);
   await discard(bucket, quarantineKey);
+  await extractText(bucket, located);
 }
 
 async function onUpload(bucket: string, objectKey: string) {

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-const as = async (page: Page, role: string, path = '') => { await page.goto(`/?demo=${role}${path}`); await expect(page.locator('.demo-banner')).toBeVisible(); };
+const as = async (page: Page, role: string, path = '') => { await page.goto(`/?demo=${role}&skipLead=1${path}`); await expect(page.locator('.demo-banner')).toBeVisible(); };
 const openCase = (page: Page, number: string) => page.locator('tr.clickable', { hasText: number }).click();
 
 test.describe('client', () => {
@@ -148,6 +148,34 @@ test.describe('layout', () => {
     await page.getByRole('button', { name: 'Hide demo controls' }).click();
     await expect(page.locator('.demo-banner')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Show demo controls' })).toBeVisible();
+  });
+});
+
+test.describe('demo lead gate', () => {
+  test('asks who is checking out the demo before opening a role, and skip still opens it', async ({ page }) => {
+    await page.goto('/?demo=client');
+    await expect(page.getByRole('dialog', { name: "Who's checking out the demo?" })).toBeVisible();
+    await expect(page.locator('.demo-banner')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Skip for now' }).click();
+    await expect(page.locator('.demo-banner')).toBeVisible();
+  });
+
+  test('does not ask again once decided this session', async ({ page }) => {
+    await page.goto('/?demo=client');
+    await page.getByRole('button', { name: 'Skip for now' }).click();
+    await expect(page.locator('.demo-banner')).toBeVisible();
+    await page.reload();
+    await expect(page.locator('.demo-banner')).toBeVisible();
+    await expect(page.getByRole('dialog', { name: "Who's checking out the demo?" })).toHaveCount(0);
+  });
+
+  test('entering a name personalises the client persona', async ({ page }) => {
+    await page.goto('/?demo=client');
+    await page.getByLabel('Your name').fill('Zinhle Dube');
+    await page.getByLabel('Work email').fill('zinhle@example.com');
+    await page.getByRole('button', { name: 'See my demo' }).click();
+    await expect(page.locator('.demo-banner')).toBeVisible();
+    await expect(page.getByText(/Good day, Zinhle/)).toBeVisible();
   });
 });
 

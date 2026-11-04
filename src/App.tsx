@@ -4,8 +4,10 @@ import { getCurrentUser } from 'aws-amplify/auth';
 import { AuthHeader } from './components/AuthHeader';
 import { Workspace } from './components/Workspace';
 import { DemoPicker } from './components/DemoPicker';
+import { DemoLeadGate } from './components/DemoLeadGate';
 import { exitDemo } from './lib/demo/exit';
-import { isDemo, isDemoEnabled } from './lib/demo/mode';
+import { getDemoRole, isDemo, isDemoEnabled } from './lib/demo/mode';
+import { hasDecidedOnLeadGate } from './lib/demo/lead';
 import { LandingPage } from './pages/LandingPage';
 import { LEGAL_TOPICS, type LegalTopic } from './lib/legal';
 import { LegalPage } from './pages/LegalPage';
@@ -55,11 +57,19 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
   const demo = isDemo();
+  const [leadDecided, setLeadDecided] = useState(hasDecidedOnLeadGate);
   useEffect(() => {
     if (demo) return;
     getCurrentUser().then(() => setEntry('authenticated')).catch(() => setEntry(entryFromUrl()));
   }, [demo]);
-  if (demo) return <Workspace signOut={exitDemo} />;
+  if (demo) {
+    const role = getDemoRole();
+    if (role && !leadDecided) {
+      const source = new URLSearchParams(window.location.search).get('demo') ? 'url' : 'picker';
+      return <DemoLeadGate role={role} source={source} onDone={() => setLeadDecided(true)} />;
+    }
+    return <Workspace signOut={exitDemo} />;
+  }
   if (legal && entry !== 'authenticated') return <LegalPage topic={legal} onTopic={openLegal} onBack={() => openLegal(null)} />;
   if (entry === 'checking') return <div className="app-boot"><span>EI</span><p>Opening your secure workspace…</p></div>;
   if (entry === 'landing') return <>

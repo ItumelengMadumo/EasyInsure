@@ -22,6 +22,7 @@ describe('model authorization: no raw writes to money, status or evidence', () =
       ['ClaimAssessment', 'AuditEvent'], ['ClaimInternalNote', 'ClaimCommunication'], ['CallRecord', 'InboundReconciliation'],
       ['ClaimAssignment', 'ClaimActivity'], ['AssetValuation', 'Policy'], ['UnderwritingProfile', 'PolicyApplication'],
       ['AccountClosureRequest', 'ClaimAnalysis'], ['AssetDetail', 'UnderwritingProfile'],
+      ['DemoLead', 'ProcessingJob'],
     ]) {
       const block = model(name, next);
       expect(block.length, name).toBeGreaterThan(0);
@@ -40,6 +41,37 @@ describe('model authorization: no raw writes to money, status or evidence', () =
   it('keeps the Bedrock copilot away from developers and junior staff', () => {
     const copilot = schema.slice(schema.indexOf('generateClaimCopilot'));
     expect(copilot.slice(0, copilot.indexOf('.handler('))).toContain('allow.groups(senior)');
+  });
+
+  it('never lets a claim owner read their own risk score, fraud flag or suggested payout', () => {
+    const claim = model('Claim', 'ClaimDocument');
+    for (const field of ['riskScore', 'fraudFlag', 'fraudReason', 'suggestedPayout']) {
+      const line = claim.slice(claim.indexOf(`${field}:`), claim.indexOf('\n', claim.indexOf(`${field}:`)));
+      expect(line, field).toContain('.authorization(');
+      expect(line, field).toContain('allow.groups(senior)');
+      expect(line, field).not.toContain('ownerDefinedIn');
+    }
+  });
+
+  it('scopes the public API key to the demo lead mutation and nowhere else', () => {
+    expect(schema).toContain("captureDemoLead: a.mutation()");
+    expect(schema).toContain('allow.publicApiKey()');
+    const [, afterCapture] = schema.split('captureDemoLead: a.mutation()');
+    expect(afterCapture.slice(0, afterCapture.indexOf('.handler('))).toContain('allow.publicApiKey()');
+    // No model and no other operation grants the public key.
+    expect(schema.split('allow.publicApiKey()')).toHaveLength(2);
+  });
+
+  it('never lets an applicant read their own premium risk score or extracted document text', () => {
+    const premium = model('PremiumAssessment', 'ApplicationDocument');
+    const premiumLine = premium.slice(premium.indexOf('riskScore:'), premium.indexOf('\n', premium.indexOf('riskScore:')));
+    expect(premiumLine).toContain('allow.groups(senior)');
+    expect(premiumLine).not.toContain('ownerDefinedIn');
+
+    const document = model('ClaimDocument', 'ClaimAssignment');
+    const extractedLine = document.slice(document.indexOf('extractedTextKey:'), document.indexOf('\n', document.indexOf('extractedTextKey:')));
+    expect(extractedLine).toContain('allow.groups(senior)');
+    expect(extractedLine).not.toContain('ownerDefinedIn');
   });
 });
 
@@ -112,6 +144,13 @@ describe('concurrency and pagination guards in handlers', () => {
     expect(handler).not.toMatch(/client\.models\.\w+\.list\(/);
     expect(readFileSync('amplify/functions/assignment-worker/handler.ts', 'utf8')).not.toMatch(/data\.models\.\w+\.list\(/);
   });
+  it('never sends the AI copilot an empty, unattributed evidence blob', () => {
+    const processClaim = readFileSync('amplify/functions/process-claim/handler.ts', 'utf8');
+    expect(processClaim).not.toContain("evidenceText: ''");
+    expect(processClaim).toContain('evidenceDocuments');
+    expect(processClaim).toContain('readExtractedText');
+  });
+
   it('promotes evidence only after a GuardDuty verdict', () => {
     const scan = readFileSync('amplify/functions/scan-evidence/handler.ts', 'utf8');
     const backend = readFileSync('amplify/backend.ts', 'utf8');

@@ -27,7 +27,12 @@
 
 /* ---------- Payout breakdown ---------- */
 .payout-breakdown{background:#f7faf9;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0}.payout-breakdown h4{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#08766d}
-.payout-breakdown ol{list-style:none;margin:0;padding:0;display:grid;gap:6px}.payout-breakdown li{display:flex;justify-content:space-between;gap:14px;font-size:12px;padding:5px 0;border-bottom:1px dashed var(--line)}.payout-breakdown li:last-child{border-bottom:0}.payout-breakdown li strong,.payout-breakdown li small{display:block}.payout-breakdown li small{color:var(--muted);font-size:10px}.payout-breakdown li b{white-space:nowrap}.payout-breakdown li.result{font-size:14px;border-top:2px solid var(--ink);padding-top:9px}.payout-breakdown li.minus b{color:#a33b2c}
+.payout-breakdown ol{list-style:none;margin:0;padding:0;display:grid;gap:6px}.payout-breakdown li{display:flex;justify-content:space-between;gap:14px;font-size:12px;padding:5px 0 5px 10px;border-bottom:1px dashed var(--line);border-left:3px solid var(--line)}.payout-breakdown li:last-child{border-bottom:0}.payout-breakdown li strong,.payout-breakdown li small{display:block}.payout-breakdown li small{color:var(--muted);font-size:10px}.payout-breakdown li b{white-space:nowrap}.payout-breakdown li.start{border-left-color:#08766d}.payout-breakdown li.result{font-size:14px;border-top:2px solid var(--ink);padding-top:9px;border-left-color:var(--ink)}.payout-breakdown li.minus{border-left-color:#a33b2c}.payout-breakdown li.minus b{color:#a33b2c}.payout-breakdown li.cap{border-left-color:#b9862e}
+.payout-breakdown-amounts{display:flex;flex-direction:column;align-items:flex-end;gap:1px}.payout-breakdown-amounts .running{color:var(--muted);font-size:10px;white-space:nowrap}
+
+.citation-list{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.citation-chip{display:block;width:100%;text-align:left;background:#f0f7f5;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:11px;color:#0c5c54;cursor:pointer}
+.citation-chip:hover{background:#e3f1ee}
 
 /* ---------- Dialogs ---------- */
 .confirm-backdrop{z-index:130}.confirm-modal{width:min(520px,94vw);max-height:92vh;overflow:auto;background:#fff;border-radius:16px;padding:24px;box-shadow:0 30px 90px #0006;display:grid;gap:12px}.confirm-modal h2{margin:0;font:800 20px Manrope;color:var(--navy)}.confirm-modal h3{margin:6px 0 0;font-size:13px}.confirm-modal p{margin:0;font-size:13px;line-height:1.55;color:#4e6370}.quote-modal{width:min(620px,94vw)}
