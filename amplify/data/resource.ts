@@ -102,7 +102,7 @@ const schema = a.schema({
   PremiumAssessment: a.model({
     owner: a.string().required(), applicationId: a.id().required(), version: a.integer().required(),
     formulaVersion: a.string().required(), inputSnapshot: a.json().required(), factors: a.json().required(),
-    riskScore: a.float().required().authorization((allow) => [allow.groups(senior).to(['read'])]), indicativePremium: a.float().required(), rangeLow: a.float().required(),
+    riskScore: a.float().authorization((allow) => [allow.groups(senior).to(['read'])]), indicativePremium: a.float().required(), rangeLow: a.float().required(),
     rangeHigh: a.float().required(), assumptions: a.string().array().required(),
     actorSubject: a.string().required(), actorDisplayNameSnapshot: a.string().required(), overrideReason: a.string(),
     createdAtSnapshot: a.datetime().required(), idempotencyKey: a.string().required(),

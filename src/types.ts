@@ -52,7 +52,7 @@ export type QuoteTerms = { excess: number; coverLimit: number; exclusions: strin
 
 export type PremiumAssessment = {
   id: string; applicationId: string; indicativePremium: number; rangeLow: number; rangeHigh: number;
-  riskScore: number; factors: Array<{ name: string; factor: number; reason: string }>; assumptions: string[];
+  riskScore?: number | null; factors: Array<{ name: string; factor: number; reason: string }>; assumptions: string[];
 };
 
 export type Policy = {

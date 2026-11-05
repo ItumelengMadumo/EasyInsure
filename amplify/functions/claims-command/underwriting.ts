@@ -61,6 +61,25 @@ const specific: Record<string, FieldDefinition[]> = {
     { key: 'operators', label: 'Operators, training and certification', section: 'usage', type: 'text', required: true }, { key: 'commercialExposure', label: 'Operating environment and commercial exposure', section: 'risk', type: 'text', required: true },
     { key: 'replacementAvailability', label: 'Parts and replacement availability', section: 'valuation', type: 'text', required: true },
   ],
+  marine: [
+    { key: 'vesselName', label: 'Vessel name', section: 'identity', type: 'text', required: true }, { key: 'hullIdentificationNumber', label: 'Hull identification number (HIN)', section: 'identity', type: 'text', required: true },
+    { key: 'vesselType', label: 'Vessel type', section: 'specifications', type: 'text', required: true }, { key: 'lengthOverall', label: 'Length overall (m)', section: 'specifications', type: 'number', required: true },
+    { key: 'engineDetails', label: 'Engine make, model and horsepower', section: 'specifications', type: 'text', required: true }, { key: 'mooringLocation', label: 'Mooring or storage location', section: 'security', type: 'text', required: true },
+    { key: 'navigationLimits', label: 'Navigation limits (coastal / inland / offshore)', section: 'usage', type: 'text', required: true }, { key: 'skipperDetails', label: 'Skipper qualifications and experience', section: 'usage', type: 'text', required: true },
+  ],
+  motor_trade: [
+    { key: 'premisesAddress', label: 'Trading premises address', section: 'identity', type: 'text', required: true }, { key: 'dealerLicenceNumber', label: 'Motor trade licence number', section: 'identity', type: 'text', required: true },
+    { key: 'stockValue', label: 'Average stock-in-trade value (ZAR)', section: 'valuation', type: 'number', required: true }, { key: 'stockType', label: 'Stock type (new / used / both)', section: 'specifications', type: 'text', required: true },
+    { key: 'testDriveRadius', label: 'Permitted test-drive radius', section: 'usage', type: 'text', required: true }, { key: 'authorisedDrivers', label: 'Authorised drivers and licence requirements', section: 'usage', type: 'text', required: true },
+    { key: 'premisesSecurity', label: 'Premises security and after-hours measures', section: 'security', type: 'text', required: true },
+  ],
+  hcv: [
+    { key: 'make', label: 'Make', section: 'identity', type: 'text', required: true }, { key: 'model', label: 'Model and derivative', section: 'identity', type: 'text', required: true },
+    { key: 'vin', label: 'VIN', section: 'identity', type: 'text', required: true }, { key: 'registrationNumber', label: 'Registration number', section: 'identity', type: 'text', required: true },
+    { key: 'gvmTonnes', label: 'Gross vehicle mass (tonnes)', section: 'specifications', type: 'number', required: true }, { key: 'configuration', label: 'Configuration (rigid / horse and trailer / etc.)', section: 'specifications', type: 'text', required: true },
+    { key: 'primaryCargo', label: 'Primary cargo or operation type', section: 'usage', type: 'text', required: true }, { key: 'operatingRoutes', label: 'Typical operating routes and areas', section: 'usage', type: 'text', required: true },
+    { key: 'driverPdpDetails', label: 'Driver PrDP and experience details', section: 'usage', type: 'text', required: true }, { key: 'tracking', label: 'Fleet tracking / telematics details', section: 'security', type: 'text', required: true },
+  ],
 };
 
 export const categoryDefinitions = Object.fromEntries(Object.keys(specific).map((assetType) => [
@@ -77,7 +96,7 @@ export function validateApplication(assetType: string, answers: Record<string, u
 }
 
 export function calculatePremium(assetType: string, answers: Record<string, unknown>) {
-  const bases: Record<string, number> = { vehicle: 500, property: 800, electronics: 200, furniture: 240, machinery: 700 };
+  const bases: Record<string, number> = { vehicle: 500, property: 800, electronics: 200, furniture: 240, machinery: 700, marine: 650, motor_trade: 900, hcv: 1100 };
   const value = Math.max(0, Number(answers.purchasePrice) || 0);
   const claims = Math.max(0, Number(answers.priorClaims) || 0);
   const factors = [

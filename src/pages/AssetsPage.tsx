@@ -18,6 +18,9 @@ const categories = [
   ['electronics', 'Electronics', 'Computers, cameras, phones and appliances'],
   ['furniture', 'Furniture & valuables', 'Furniture, art, collections and valuable contents'],
   ['machinery', 'Machinery', 'Tools, plant and operational equipment'],
+  ['marine', 'Marine', 'Boats, vessels and marine machinery'],
+  ['motor_trade', 'Motor trade', 'Dealership and motor trade stock-in-trade'],
+  ['hcv', 'Heavy commercial vehicle', 'Trucks, trailers and heavy commercial fleet'],
 ];
 const steps = ['category', 'ownership', 'identity', 'specifications', 'condition', 'usage', 'security', 'valuation', 'risk', 'review'];
 

@@ -56,18 +56,29 @@ export function seedDb(): Db {
   policy('pol-2', CLIENT, 'POL-100232', price('electronics', 42000).indicativePremium, 'All-risk portable electronics cover.', 42000, 1500, deviceExclusions);
   policy('pol-3', PIETER, 'POL-100877', price('vehicle', 215000).indicativePremium, 'Comprehensive motor cover.', 215000, 4000, motorExclusions);
   policy('pol-4', PIETER, 'POL-100912', price('vehicle', 450000).indicativePremium, 'Comprehensive motor cover.', 450000, 12000, motorExclusions);
+  const marineExclusions = ['Wear and tear', 'Navigating outside declared limits', 'Racing or competition use'];
+  const motorTradeExclusions = ['Wear and tear', 'Unlicensed test drivers', 'Use outside the declared test-drive radius'];
+  policy('pol-5', CLIENT, 'POL-100933', price('marine', 380000).indicativePremium, 'Comprehensive marine hull and machinery cover.', 380000, 8000, marineExclusions);
+  policy('pol-6', PIETER, 'POL-100947', price('motor_trade', 2200000).indicativePremium, 'Motor trade stock-in-trade cover.', 2200000, 15000, motorTradeExclusions);
+  policy('pol-7', PIETER, 'POL-100958', price('hcv', 980000).indicativePremium, 'Comprehensive heavy commercial vehicle cover.', 980000, 20000, motorExclusions);
   asset({ id: 'ast-1', owner: CLIENT, assetType: 'vehicle', description: 'Toyota Hilux 2.8 GD-6 double cab', make: 'Toyota', model: 'Hilux', year: 2021, vin: 'AHTFB3CD600123456', registrationNumber: 'CA 482 913', mileageKm: 58000, purchasePrice: 520000, policyId: 'pol-1', status: 'INSURABLE' });
   asset({ id: 'ast-2', owner: CLIENT, assetType: 'electronics', description: 'MacBook Pro 14-inch', make: 'Apple', model: 'MacBook Pro', year: 2023, serialNumber: 'C02XK1ABC7', purchasePrice: 42000, policyId: 'pol-2', status: 'INSURABLE', portable: true });
   asset({ id: 'ast-3', owner: CLIENT, assetType: 'electronics', description: 'Canon EOS R6 camera kit', make: 'Canon', model: 'EOS R6', year: 2024, serialNumber: 'CN4401992', purchasePrice: 38000, status: 'UNDER_REVIEW', registeredAt: at(9), portable: true });
   asset({ id: 'ast-4', owner: CLIENT, assetType: 'property', description: 'Family home, Waterkloof Pretoria', address: '14 Jacaranda Street, Waterkloof, Pretoria', squareFootage: 240, constructionType: 'Brick', roofType: 'Tile', purchasePrice: 1850000, status: 'UNDER_REVIEW', registeredAt: at(3) });
   asset({ id: 'ast-5', owner: PIETER, assetType: 'vehicle', description: 'Volkswagen Polo Vivo 1.4', make: 'Volkswagen', model: 'Polo Vivo', year: 2019, vin: 'AAVZZZ6RZKU123789', registrationNumber: 'GP 330 221', mileageKm: 91000, purchasePrice: 215000, policyId: 'pol-3', status: 'INSURABLE' });
   asset({ id: 'ast-6', owner: PIETER, assetType: 'vehicle', description: 'Toyota Fortuner 2.8 GD-6 4x4', make: 'Toyota', model: 'Fortuner', year: 2022, vin: 'AHTKB3CD700654321', registrationNumber: 'GP 771 408', mileageKm: 34000, purchasePrice: 450000, policyId: 'pol-4', status: 'INSURABLE' });
+  asset({ id: 'ast-7', owner: CLIENT, assetType: 'marine', description: 'Jeanneau Merry Fisher 795 cabin cruiser', vesselName: 'Sea Breeze', hullIdentificationNumber: 'FR-JNN12345L021', vesselType: 'Cabin cruiser', lengthOverall: 7.9, engineDetails: 'Yamaha F150 150hp outboard', purchasePrice: 380000, policyId: 'pol-5', status: 'INSURABLE' });
+  asset({ id: 'ast-8', owner: PIETER, assetType: 'motor_trade', description: 'Randburg Motors used-car dealership stock', premisesAddress: '45 Republic Road, Randburg', dealerLicenceNumber: 'MT-GP-00218', stockValue: 2200000, stockType: 'Used', purchasePrice: 2200000, policyId: 'pol-6', status: 'INSURABLE' });
+  asset({ id: 'ast-9', owner: PIETER, assetType: 'hcv', description: 'Freightliner Argosy 6x4 truck tractor', make: 'Freightliner', model: 'Argosy', year: 2020, vin: '1FUJGHDV6LLJ12345', registrationNumber: 'GP 902 556', gvmTonnes: 34, purchasePrice: 980000, policyId: 'pol-7', status: 'INSURABLE' });
   application('app-1', CLIENT, 'APP-2026-0101', 'ast-1', 'vehicle', 'ACCEPTED', 520000, { excess: 5000, coverLimit: 520000, exclusions: motorExclusions });
   application('app-2', CLIENT, 'APP-2026-0102', 'ast-2', 'electronics', 'ACCEPTED', 42000, { excess: 1500, coverLimit: 42000, exclusions: deviceExclusions });
   application('app-3', CLIENT, 'APP-2026-0188', 'ast-3', 'electronics', 'QUOTED', 38000, { excess: 1500, coverLimit: 38000, exclusions: deviceExclusions }, { quoteExpiresAt: at(-14) });
   application('app-4', CLIENT, 'APP-2026-0195', 'ast-4', 'property', 'SUBMITTED', 1850000, { excess: 0, coverLimit: 0, exclusions: [] }, { submittedAt: at(3) });
   application('app-5', PIETER, 'APP-2026-0140', 'ast-5', 'vehicle', 'ACCEPTED', 215000, { excess: 4000, coverLimit: 215000, exclusions: motorExclusions });
   application('app-6', PIETER, 'APP-2026-0161', 'ast-6', 'vehicle', 'ACCEPTED', 450000, { excess: 12000, coverLimit: 450000, exclusions: motorExclusions });
+  application('app-7', CLIENT, 'APP-2026-0203', 'ast-7', 'marine', 'ACCEPTED', 380000, { excess: 8000, coverLimit: 380000, exclusions: marineExclusions });
+  application('app-8', PIETER, 'APP-2026-0211', 'ast-8', 'motor_trade', 'ACCEPTED', 2200000, { excess: 15000, coverLimit: 2200000, exclusions: motorTradeExclusions });
+  application('app-9', PIETER, 'APP-2026-0219', 'ast-9', 'hcv', 'ACCEPTED', 980000, { excess: 20000, coverLimit: 980000, exclusions: motorExclusions });
 
   type Claim = Record<string, any>;
   const claim = (c: Claim) => add('Claim', { tier: 2, riskScore: 0.3, fraudFlag: false, currentMilestone: c.status, ...c });
@@ -176,6 +187,37 @@ export function seedDb(): Db {
     fraudRisk: 'medium', fraudRecommendation: 'Require additional verification',
   });
   job('clm-6', 'SUCCEEDED');
+
+  // clm-7: marine claim, straightforward storm damage, awaiting a human decision.
+  claim({ id: 'clm-7', owner: CLIENT, claimNumber: 'CLM-20447', policeCaseNumber: 'CAS 233/10/2026', policyId: 'pol-5', assetId: 'ast-7', claimType: 'weather', description: 'Storm surge at the marina damaged the hull and console while moored.', incidentLocation: 'Hartbeespoort Dam Marina', incidentDate: at(6, 7), amountRequested: 65000, status: 'DECISION_PENDING', suggestedPayout: 56000, submittedAt: at(5, 9) });
+  staffAssign('clm-7', 'intermediate_officer', 'LEAD_ADVISOR', true, 5); staffAssign('clm-7', 'senior_officer', 'SUPERVISOR', false, 5);
+  event('clm-7', 'SUBMITTED', 'Claim submitted', 5, 9, 'Thandi Mokoena', 'client'); event('clm-7', 'VALIDATING', 'Evidence scanned and validated', 4, 10);
+  event('clm-7', 'UNDER_ASSESSMENT', 'Assessment started', 3, 9, staffName('intermediate_officer'), 'intermediate_officer');
+  event('clm-7', 'DECISION_PENDING', 'Evidence review is complete and the payout recommendation awaits a human decision.', 1, 9, staffName('superuser'), 'superuser');
+  const d7 = doc('clm-7', 'police-affidavit.pdf', 'AFFIDAVIT', 290_000); const d7q = doc('clm-7', 'marine-surveyor-report.pdf', 'REPAIR_ESTIMATE', 610_000); doc('clm-7', 'hull-damage.jpg', 'INCIDENT_EVIDENCE', 2_900_000, 'image/jpeg');
+  note('clm-7', 'intermediate_officer', 'Surveyor report confirms storm-related hull and console damage, consistent with the marina\'s logged weather alert.', 2, 11);
+  assessment({ id: 'as-7', claimId: 'clm-7', claimOwner: CLIENT, version: 1, evidenceReviewed: [d7, d7q], coveredLossValue: 65000, repairEstimate: 62000, policyLimit: 380000, excess: 8000, depreciation: 0.09, recommendedPayout: 56000, status: 'FINALIZED', assessorSubject: PERSONAS.intermediate_officer.userId, assessorDisplayNameSnapshot: staffName('intermediate_officer'), assessorRoleSnapshot: 'intermediate_officer', createdAtSnapshot: at(3, 9), submittedAt: at(2, 11), submissionNote: 'Surveyor report supports the claimed damage. Standard depreciation applied.', finalizedAt: at(1, 9), finalizedBySubject: PERSONAS.superuser.userId });
+  job('clm-7', 'SUCCEEDED');
+
+  // clm-8: motor trade stock damage, assessment in progress.
+  claim({ id: 'clm-8', owner: PIETER, claimNumber: 'CLM-20459', policeCaseNumber: 'CAS 266/10/2026', policyId: 'pol-6', assetId: 'ast-8', claimType: 'accidental_damage', description: 'A used-car demo unit was damaged by a customer during an unaccompanied test drive.', incidentLocation: '45 Republic Road, Randburg', incidentDate: at(4, 14), amountRequested: 85000, status: 'UNDER_ASSESSMENT', tier: 2, riskScore: 0.35, submittedAt: at(3, 8) });
+  staffAssign('clm-8', 'junior_officer', 'LEAD_ADVISOR', true, 3);
+  event('clm-8', 'SUBMITTED', 'Claim submitted', 3, 8, 'Pieter van der Merwe', 'client'); event('clm-8', 'VALIDATING', 'Evidence scanned and validated', 2, 10);
+  event('clm-8', 'UNDER_ASSESSMENT', 'Assessment started', 1, 9, staffName('junior_officer'), 'junior_officer');
+  doc('clm-8', 'police-affidavit.pdf', 'AFFIDAVIT', 260_000); doc('clm-8', 'dealership-damage-photos.jpg', 'INCIDENT_EVIDENCE', 1_900_000, 'image/jpeg'); doc('clm-8', 'panelbeater-quote.pdf', 'REPAIR_ESTIMATE', 480_000);
+  note('clm-8', 'junior_officer', 'Test drive was within the declared radius and the driver held a valid licence. Awaiting the final repair quote.', 1, 11);
+  job('clm-8', 'SUCCEEDED');
+
+  // clm-9: HCV claim, above the standard limit, awaiting a superuser decision.
+  claim({ id: 'clm-9', owner: PIETER, claimNumber: 'CLM-20471', policeCaseNumber: 'CAS 288/10/2026', policyId: 'pol-7', assetId: 'ast-9', claimType: 'accidental_damage', description: 'Jack-knifed on a wet off-ramp; cab and trailer coupling damaged, load unaffected.', incidentLocation: 'N3 off-ramp, Heidelberg', incidentDate: at(9, 6), amountRequested: 310000, status: 'DECISION_PENDING', tier: 3, riskScore: 0.4, suggestedPayout: 265000, submittedAt: at(8, 7) });
+  staffAssign('clm-9', 'intermediate_officer', 'LEAD_ADVISOR', true, 8);
+  event('clm-9', 'SUBMITTED', 'Claim submitted', 8, 7, 'Pieter van der Merwe', 'client'); event('clm-9', 'VALIDATING', 'Evidence scanned and validated', 7, 9);
+  event('clm-9', 'UNDER_ASSESSMENT', 'Assessment started', 5, 9, staffName('intermediate_officer'), 'intermediate_officer');
+  event('clm-9', 'DECISION_PENDING', 'Evidence review is complete and the payout recommendation awaits a human decision.', 2, 9, 'Thabo Molefe', 'senior_officer');
+  const d9 = doc('clm-9', 'police-affidavit.pdf', 'AFFIDAVIT', 310_000); const d9q = doc('clm-9', 'fleet-repair-estimate.pdf', 'REPAIR_ESTIMATE', 540_000); doc('clm-9', 'scene-photos.jpg', 'INCIDENT_EVIDENCE', 3_600_000, 'image/jpeg');
+  note('clm-9', 'intermediate_officer', 'Telematics confirms braking before the jack-knife; wet-road conditions logged by the weather service at the time.', 4, 11);
+  assessment({ id: 'as-9', claimId: 'clm-9', claimOwner: PIETER, version: 1, evidenceReviewed: [d9, d9q], coveredLossValue: 310000, repairEstimate: 298000, policyLimit: 980000, excess: 20000, depreciation: 0.1, recommendedPayout: 265000, status: 'FINALIZED', assessorSubject: PERSONAS.intermediate_officer.userId, assessorDisplayNameSnapshot: staffName('intermediate_officer'), assessorRoleSnapshot: 'intermediate_officer', createdAtSnapshot: at(5, 9), finalizedAt: at(2, 9), finalizedBySubject: SENIOR_2 });
+  job('clm-9', 'SUCCEEDED');
 
   // One coherent timeline per claim: submission and last activity come from the recorded events.
   for (const c of db.Claim) {

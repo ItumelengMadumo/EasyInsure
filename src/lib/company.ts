@@ -3,14 +3,14 @@
 // launch. They are deliberately obvious so they cannot ship unnoticed, and nothing here is invented.
 export const COMPANY = {
   tradingName: 'EasyInsure',
-  legalName: '[PLACEHOLDER: registered company name and registration number]',
-  fspNumber: '[PLACEHOLDER: FSP licence number]',
-  underwriter: '[PLACEHOLDER: underwriting insurer name and licence number]',
-  registeredAddress: '[PLACEHOLDER: registered address]',
-  supportEmail: '[PLACEHOLDER: support email]',
-  supportPhone: '[PLACEHOLDER: support phone number]',
-  complaintsEmail: '[PLACEHOLDER: complaints email]',
-  informationOfficer: '[PLACEHOLDER: Information Officer name and contact details]',
+  legalName: 'Geeky Solutions (Pty) Ltd (registration number 2021/800172/07)',
+  fspNumber: 'Not yet an authorised FSP — application in progress',
+  underwriter: 'Not yet appointed — underwriting partner to be confirmed',
+  registeredAddress: 'Krugersdorp, Gauteng, South Africa',
+  supportEmail: 'Itu@geekysolutions.co.za',
+  supportPhone: '063 782 8162',
+  complaintsEmail: 'Itu@geekysolutions.co.za',
+  informationOfficer: 'Itumeleng-Joas Madumo, Itu@geekysolutions.co.za',
 };
 
 /** Bodies that receive complaints. Names are fixed; contact details must be confirmed by compliance. */
