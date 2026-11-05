@@ -168,7 +168,7 @@ describe('demo claim lifecycle', () => {
     const accepted = await client.mutations.acceptPolicyQuote({ applicationId: 'app-4', acceptedWordingVersion: POLICY_WORDING_VERSION });
     expect(accepted.data.status).toBe('ACCEPTED');
     const policies = (await client.models.Policy.list()).data;
-    expect(policies).toHaveLength(3);
+    expect(policies).toHaveLength(4);
     expect(policies.find((p: any) => p.excess === 10000)?.exclusions).toEqual(['Flood damage']);
   });
 
