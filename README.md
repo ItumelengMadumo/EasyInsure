@@ -177,7 +177,7 @@ EasyInsure/
 │   ├── auth/resource.ts              Cognito, role groups, post-confirmation trigger
 │   ├── data/resource.ts              Models, enums, authorization and custom mutations/queries
 │   ├── storage/resource.ts           S3 prefixes (quarantine / evidence / extracted) and access
-│   ├── config/regions.ts             Single-region boundary (us-east-1)
+│   ├── config/regions.ts             Durable data region (af-south-1) and Bedrock region (us-east-1)
 │   ├── scripts/assert-regional-boundary.ts   CI guard (`npm run check:region`)
 │   ├── backend.test.ts, security.test.ts     Backend and authorization tests
 │   └── functions/
@@ -288,7 +288,7 @@ cannot be matched. See `Docs/CLAIM_CASE_ARCHITECTURE.md` before enabling a provi
 
 ## Environments and deployment
 
-Amplify Hosting app **EasyInsure** (us-east-1) builds three branches with auto-build, each with its
+Amplify Hosting app **EasyInsure** (target region: af-south-1 — pending the Amplify app move described below) builds three branches with auto-build, each with its
 own backend:
 
 | Environment | Git branch | URL |
@@ -299,7 +299,7 @@ own backend:
 
 Promote changes `dev` → `Staging` → `main`, confirming each build before the next. `amplify.yml` runs
 `npm run check:region`, deploys the backend (`ampx pipeline-deploy`) and builds the frontend into
-`dist/`. Deployment is blocked outside **us-east-1**.
+`dist/`. Deployment is blocked outside **af-south-1** (durable data region). Bedrock AI inference stays in **us-east-1**, independent of the data region — there is no `af-south-1` cross-region inference profile for the approved Claude model yet.
 
 Staff accounts are not self-service; add them to the correct Cognito group in each environment.
 `Docs/AMPLIFY_MIGRATION.md` has the production rollout checklist.
@@ -343,7 +343,7 @@ npm run sandbox:delete         # tear the sandbox down to stop AWS costs
   and Bedrock access is scoped to one approved inference profile.
 - **Evidence** is quarantined, malware-scanned and re-validated server-side.
 - **Audit:** `AuditEvent` records who did what, when, with before and after values.
-- **Region:** deployments are restricted to us-east-1 locally and in the pipeline.
+- **Region:** durable data (Cognito, AppSync/DynamoDB, S3) is restricted to af-south-1 locally and in the pipeline. Bedrock AI inference runs in us-east-1 regardless of data region, since no af-south-1 inference profile exists yet for the approved model.
 - **Account closure** is for clients only; it anonymises direct identifiers but retains claims, decisions,
   audit events and communications under the retention policy (durations still need compliance approval).
 - **MFA:** optional authenticator-app (TOTP) sign-in can be switched on from Profile & security.

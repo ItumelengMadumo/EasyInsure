@@ -10,8 +10,11 @@ import { canTransition, coerceJsonObject, resolveProfileIdentity, validateDraftP
 import { calculatePremium, calculateRecommendedPayout, validateApplication } from './functions/claims-command/underwriting';
 
 describe('regional deployment boundary', () => {
-  it('keeps the application data plane and Bedrock endpoint in us-east-1', () => {
-    expect(DATA_REGION).toBe('us-east-1');
+  it('keeps the durable data plane in af-south-1', () => {
+    expect(DATA_REGION).toBe('af-south-1');
+  });
+
+  it('keeps the Bedrock endpoint in us-east-1, independent of the data region', () => {
     expect(BEDROCK_REGION).toBe('us-east-1');
     expect(BEDROCK_INFERENCE_PROFILE_ID.startsWith('us.')).toBe(true);
   });

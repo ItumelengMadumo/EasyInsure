@@ -15,7 +15,7 @@ AI output is advisory. No model or deterministic function can approve, reject, p
 
 ## Local validation
 
-Prerequisites are Node.js 22, npm 10.9.4, Python 3.12, an AWS profile, and access to `us-east-1`.
+Prerequisites are Node.js 22, npm 10.9.4, Python 3.12, an AWS profile, and access to `af-south-1` (durable data) and `us-east-1` (Bedrock).
 
 ```powershell
 npm ci
@@ -30,10 +30,10 @@ The committed `amplify_outputs.json` is a non-secret placeholder so local type c
 
 ## Required production setup
 
-1. Bootstrap the AWS account and connect the repository to Amplify Hosting in `us-east-1`.
+1. Bootstrap the AWS account and connect the repository to Amplify Hosting in `af-south-1`. **Code readiness only, as of this change**: `amplify/config/regions.ts` now targets `af-south-1` for durable data, but the live Amplify Hosting app is still provisioned in `us-east-1` — moving it (new Amplify app, reconnect branches, DNS) is a separate manual infra step not yet performed.
 2. Create `staging` and `production` branches. Never use a personal sandbox for real claim data.
-3. The application stack and durable data are hosted in `us-east-1`. A deployment-time check refuses a different primary region.
-4. Bedrock uses the `us-east-1` endpoint with the approved `us.anthropic.claude-haiku-4-5-20251001-v1:0` US inference profile. AWS may route inference among the US destination regions belonging to that profile.
+3. The application stack and durable data are hosted in `af-south-1`. A deployment-time check refuses a different primary region.
+4. Bedrock uses the `us-east-1` endpoint with the approved `us.anthropic.claude-haiku-4-5-20251001-v1:0` US inference profile, intentionally independent of the `af-south-1` data region — there is no South African cross-region inference profile for this model. AWS may route inference among the US destination regions belonging to that profile.
 5. Set the approved identifier with `npx ampx sandbox secret set BEDROCK_MODEL_ID` for sandboxes and add the same secret to each hosted branch. Never configure `AWS_BEARER_TOKEN_BEDROCK`; Lambda uses its IAM execution role.
 6. Create Cognito staff group memberships through a controlled administrator process. Self-registration never grants a staff role.
 7. Configure CloudWatch alarm destinations, AWS Budget notifications, WAF/rate limiting, retention periods, and deletion protection before production.
