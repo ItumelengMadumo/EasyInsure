@@ -1,11 +1,10 @@
-// Company and regulatory details shown on the legal pages, the footer and the policy schedule.
-// EVERY value marked [PLACEHOLDER] must be supplied by the business or its compliance adviser before
-// launch. They are deliberately obvious so they cannot ship unnoticed, and nothing here is invented.
+// Company details shown on the legal pages, the footer and the policy schedule.
+// EasyInsure sells claims-handling software to UMAs; it is not an insurer or FSP, so no
+// insurance-licensing disclosures (FSP number, underwriter) apply here.
 export const COMPANY = {
   tradingName: 'EasyInsure',
   legalName: 'Geeky Solutions (Pty) Ltd (registration number 2021/800172/07)',
-  fspNumber: 'Not yet an authorised FSP — application in progress',
-  underwriter: 'Not yet appointed — underwriting partner to be confirmed',
+  softwareDisclaimer: 'EasyInsure is claims software by Geeky Solutions (Pty) Ltd, 2021/800172/07. We are not an insurer or financial services provider.',
   registeredAddress: 'Krugersdorp, Gauteng, South Africa',
   supportEmail: 'Itu@geekysolutions.co.za',
   supportPhone: '063 782 8162',
@@ -13,16 +12,10 @@ export const COMPANY = {
   informationOfficer: 'Itumeleng-Joas Madumo, Itu@geekysolutions.co.za',
 };
 
-/** Bodies that receive complaints. Names are fixed; contact details must be confirmed by compliance. */
+/** Bodies that receive complaints. EasyInsure is software, not an insurer, so only the data-privacy regulator applies. */
 export const COMPLAINT_BODIES = [
-  { name: 'Ombudsman for Short-term Insurance (OSTI)', note: '[PLACEHOLDER: confirm current contact details]' },
-  { name: 'FAIS Ombud', note: '[PLACEHOLDER: confirm current contact details]' },
-  { name: 'Information Regulator (for privacy complaints under POPIA)', note: '[PLACEHOLDER: confirm current contact details]' },
+  {
+    name: 'Information Regulator (South Africa)',
+    note: 'For complaints about how personal information is processed under POPIA. JD House, 27 Stiemens Street, Braamfontein, Johannesburg, 2001. Email: complaints.IR@justice.gov.za. Tel: 010 023 5200.',
+  },
 ];
-
-export const COOLING_OFF = '[PLACEHOLDER: cooling-off rights wording to be supplied by compliance]';
-export const WORDING_SUMMARY = '[PLACEHOLDER: policy wording summary and link to the full wording for this version]';
-
-const all = (): string[] => [...Object.values(COMPANY), COOLING_OFF, WORDING_SUMMARY, ...COMPLAINT_BODIES.map((item) => item.note)];
-/** True while any legal detail is still a placeholder. The UI shows a visible notice until this is false. */
-export const hasPlaceholders = () => all().some((value) => value.includes('[PLACEHOLDER'));

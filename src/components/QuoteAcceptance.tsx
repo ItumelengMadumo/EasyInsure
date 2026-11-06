@@ -1,5 +1,4 @@
 import { FormEvent, useState } from 'react';
-import { COOLING_OFF, WORDING_SUMMARY, hasPlaceholders } from '../lib/company';
 import { money } from '../lib/format';
 import { useModal } from '../lib/useModal';
 import type { PolicyApplication } from '../types';
@@ -36,10 +35,7 @@ export function QuoteAcceptance({ application, assetName, onCancel, onAccept }: 
         </dl>
         <h3>Not covered</h3>
         {quote.exclusions.length ? <ul className="exclusions">{quote.exclusions.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="muted">No specific exclusions were recorded on this quote.</p>}
-        <h3>Your policy wording</h3><p className="muted">{WORDING_SUMMARY}</p>
-        <h3>Your cooling-off rights</h3><p className="muted">{COOLING_OFF}</p>
-        <p className="info-callout small"><strong>Payment:</strong> accepting activates your cover. Debit-order set-up is the next step and is not available in this release, so no payment is taken now.</p>
-        {hasPlaceholders() && <p className="form-error" role="note">Some legal wording above is still awaiting compliance review.</p>}
+        <p className="info-callout small"><strong>Payment:</strong> accepting activates your insurer's or UMA's policy on this platform. Debit-order set-up is the next step and is not available in this release, so no payment is taken now.</p>
         <label className="check"><input type="checkbox" checked={terms} onChange={(event) => setTerms(event.target.checked)} /> I have read the cover limit, excess and exclusions above.</label>
         <label className="check"><input type="checkbox" checked={truth} onChange={(event) => setTruth(event.target.checked)} /> The answers I gave in my application are true and complete.</label>
       </>}
